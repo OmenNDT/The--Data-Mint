@@ -1,0 +1,563 @@
+"""The Data Mint - One-Click Training Launcher (Gradio UI).
+
+Professional Gradio web UI (Vietnamese) for AI engineers.
+Covers all 9 pipeline phases with maximum parameter fine-tuning.
+Core UX: chọn dataset → bấm Run.
+"""
+
+import os
+import gradio as gr
+import logging
+import threading
+import queue
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Demo mode detection
+DEMO_MODE = os.environ.get("DEMO_MODE", "").strip() in ("1", "true", "yes")
+
+# Import launcher modules
+from .pipeline_orchestrator import PipelineOrchestrator, PipelineConfig, PHASE_DEFINITIONS
+from .config_preset_manager import ConfigPresetManager
+from .launcher_utils import (
+    check_gpu_available,
+    check_comfyui_connection,
+    check_disk_space,
+    get_checkpoint_info,
+    resolve_pipeline_path
+)
+from .ui_dataset_panel import (
+    browse_folder,
+    create_dataset_panel,
+    update_estimate,
+    get_phases_to_run
+)
+from .ui_progress_panel import (
+    create_progress_panel,
+    format_log_line
+)
+from .ui_results_panel import (
+    create_results_panel,
+    load_qa_results,
+    load_validation_results,
+    get_sample_images,
+    format_qa_display,
+    format_validation_display,
+    format_run_summary
+)
+
+if DEMO_MODE:
+    from .demo_pipeline_runner import MockPipelineOrchestrator
+    from .demo_results_data import write_fake_results
+
+
+class PipelineLauncherApp:
+    """Main Gradio application for pipeline launcher."""
+
+    def __init__(self, server_port: int = 7860):
+        """Initialize the launcher app.
+
+        Args:
+            server_port: Port for Gradio server
+        """
+        self.server_port = server_port
+
+        # Initialize managers
+        self.preset_manager = ConfigPresetManager()
+
+        # State
+        self.is_running = False
+        self.current_orchestrator: Optional[PipelineOrchestrator] = None
+        self.log_queue: queue.Queue = queue.Queue()
+
+        logger.info("PipelineLauncherApp initialized")
+
+    def build_ui(self) -> gr.Blocks:
+        """Build the Gradio UI.
+
+        Returns:
+            Gradio Blocks instance
+        """
+        # Load presets (value=file stem for load_preset, label=display name)
+        presets = self.preset_manager.list_presets()
+        preset_choices = [(p.name, p.file_path.stem) for p in presets]
+        preset_stems = [p.file_path.stem for p in presets]
+        default_preset = "pilot" if "pilot" in preset_stems else (preset_stems[0] if preset_stems else "pilot")
+
+        # Check GPU and ComfyUI on startup (skip in demo mode)
+        if DEMO_MODE:
+            gpu_available, gpu_msg = True, "Demo Mode"
+            comfyui_available, comfyui_msg = True, "Demo Mode"
+        else:
+            gpu_available, gpu_msg = check_gpu_available()
+            comfyui_available, comfyui_msg = check_comfyui_connection()
+
+        # Build UI (theme/css passed to launch() for Gradio 6 compat)
+        self._theme = gr.themes.Soft(primary_hue="blue")
+        self._css = """
+            .main-header {text-align: center; margin-bottom: 20px;}
+            .phase-label {font-size: 1.2em; font-weight: bold;}
+            .run-summary {background: #f0f0f0; padding: 10px; border-radius: 8px;}
+            .demo-banner {background: #fff3cd; padding: 8px 16px; border-radius: 6px; text-align: center; font-weight: bold;}
+        """
+        with gr.Blocks(title="The Data Mint - One-Click Launcher") as app:
+            # Header
+            gr.Markdown(
+                """
+                # 🚀 The Data Mint - One-Click Training Launcher
+                *Giao diện chuyên nghiệp cho kỹ sư AI*
+                """,
+                elem_classes=["main-header"]
+            )
+
+            # Demo mode banner
+            if DEMO_MODE:
+                gr.Markdown(
+                    "⚠️ **DEMO MODE** — Pipeline giả lập, không cần GPU/ComfyUI",
+                    elem_classes=["demo-banner"]
+                )
+
+            # Status bar
+            status_parts = []
+            if gpu_available:
+                status_parts.append(f"✅ GPU: {gpu_msg}")
+            else:
+                status_parts.append(f"❌ GPU: {gpu_msg}")
+
+            if comfyui_available:
+                status_parts.append("✅ ComfyUI")
+            else:
+                status_parts.append("⚠️ ComfyUI: Chưa kết nối")
+
+            gr.Markdown(" | ".join(status_parts))
+
+            with gr.Tab("⚙️ Thiết lập"):
+                # Dataset selection
+                with gr.Group():
+                    gr.Markdown("### 📁 Dataset")
+                    with gr.Row():
+                        dataset_path = gr.Textbox(
+                            label="Thư mục Dataset",
+                            placeholder="Chọn thư mục...",
+                            scale=4
+                        )
+                        browse_btn = gr.Button("📂 Chọn", scale=1)
+
+                # Preset selection
+                with gr.Group():
+                    gr.Markdown("### ⚙️ Cấu hình")
+                    with gr.Row():
+                        preset_dropdown = gr.Dropdown(
+                            choices=preset_choices,
+                            value=default_preset,
+                            label="Preset",
+                            scale=3
+                        )
+                        estimate_text = gr.Markdown(
+                            value="*Ước tính: ~30 phút*"
+                        )
+
+                    # Expert mode
+                    expert_checkbox = gr.Checkbox(
+                        label="🔧 Chế độ Expert",
+                        value=False
+                    )
+
+                    with gr.Group(visible=False) as expert_group:
+                        with gr.Row():
+                            total_images = gr.Number(value=500, label="Số ảnh", minimum=1)
+                            epochs = gr.Number(value=20, label="Epochs", minimum=1)
+                            batch_size = gr.Number(value=16, label="Batch Size", minimum=1)
+                        with gr.Row():
+                            model_size = gr.Dropdown(
+                                choices=[("Nano", "n"), ("Small", "s"), ("Medium", "m")],
+                                value="n",
+                                label="Model Size"
+                            )
+
+                # Phase selection
+                with gr.Group():
+                    gr.Markdown("### 📋 Các Phase")
+                    with gr.Row():
+                        phase6_check = gr.Checkbox(label="6: Tạo ảnh", value=True)
+                        phase7_check = gr.Checkbox(label="7: Hậu xử lý", value=True)
+                    with gr.Row():
+                        phase8_check = gr.Checkbox(label="8: QA", value=True)
+                        phase9_check = gr.Checkbox(label="9: Đánh giá")
+
+                    with gr.Group(visible=False) as phase9_group:
+                        real_yolo_dir = gr.Textbox(
+                            label="📁 Dataset YOLO thực",
+                            placeholder="Đường dẫn..."
+                        )
+
+                # Checkpoint
+                checkpoint_info = get_checkpoint_info()
+                if checkpoint_info:
+                    checkpoint_text = f"💾 *Checkpoint: {checkpoint_info['images_generated']} ảnh - {checkpoint_info['last_updated']}*"
+                    resume_checkbox = gr.Checkbox(label="Tiếp tục từ checkpoint", value=False)
+                else:
+                    checkpoint_text = "*💾 Không có checkpoint*"
+                    resume_checkbox = gr.Checkbox(visible=False)
+
+                gr.Markdown(checkpoint_text)
+
+                # Action buttons
+                with gr.Row():
+                    run_btn = gr.Button("🚀 Chạy Pipeline", variant="primary", size="lg")
+                    cancel_btn = gr.Button("⏹️ Hủy", variant="stop", size="lg", visible=False)
+
+            with gr.Tab("📝 Tiến trình"):
+                phase_label = gr.Markdown("**Phase:** Chờ chạy...")
+                with gr.Row():
+                    progress_bar = gr.Slider(0, 100, 0, label="Tiến trình", interactive=False, scale=4)
+                    progress_pct = gr.Textbox("0%", scale=1, interactive=False)
+                log_display = gr.Textbox(label="Log", lines=25, interactive=False)
+
+            with gr.Tab("📊 Kết quả"):
+                with gr.Group():
+                    gr.Markdown("### Tổng kết")
+                    run_summary = gr.Markdown("*Chưa có kết quả*")
+                with gr.Group():
+                    gr.Markdown("### QA")
+                    qa_ssim = gr.Markdown("**SSIM:** ---")
+                    qa_pass = gr.Markdown("**Pass Rate:** ---")
+                with gr.Group():
+                    gr.Markdown("### Validation")
+                    val_table = gr.Dataframe(
+                        headers=["Ratio", "mAP@0.5", "mAP@0.5:0.95"],
+                        value=[]
+                    )
+                gr.Markdown("### Ảnh mẫu")
+                gallery = gr.Gallery(columns=6)
+
+            # Event handlers
+            browse_fn = (lambda: "./dataset/demo") if DEMO_MODE else browse_folder
+            browse_btn.click(
+                fn=browse_fn,
+                outputs=[dataset_path]
+            )
+
+            preset_dropdown.change(
+                fn=lambda name: update_estimate(name, presets),
+                inputs=[preset_dropdown],
+                outputs=[estimate_text]
+            )
+
+            expert_checkbox.change(
+                fn=lambda checked: gr.update(visible=checked),
+                inputs=[expert_checkbox],
+                outputs=[expert_group]
+            )
+
+            phase9_check.change(
+                fn=lambda checked: gr.update(visible=checked),
+                inputs=[phase9_check],
+                outputs=[phase9_group]
+            )
+
+            # Run pipeline
+            run_btn.click(
+                fn=self.start_pipeline,
+                inputs=[
+                    dataset_path,
+                    preset_dropdown,
+                    expert_checkbox,
+                    total_images,
+                    epochs,
+                    batch_size,
+                    model_size,
+                    phase6_check,
+                    phase7_check,
+                    phase8_check,
+                    phase9_check,
+                    real_yolo_dir,
+                    resume_checkbox
+                ],
+                outputs=[
+                    run_btn,
+                    cancel_btn,
+                    phase_label,
+                    progress_bar,
+                    progress_pct,
+                    log_display,
+                    run_summary,
+                    qa_ssim,
+                    qa_pass,
+                    val_table,
+                    gallery
+                ]
+            )
+
+            # Cancel
+            cancel_btn.click(
+                fn=self.cancel_pipeline,
+                outputs=[cancel_btn]
+            )
+
+        return app
+
+    def start_pipeline(
+        self,
+        dataset_path: str,
+        preset_name: str,
+        expert_mode: bool,
+        total_images: int,
+        epochs: int,
+        batch_size: int,
+        model_size: str,
+        phase6: bool,
+        phase7: bool,
+        phase8: bool,
+        phase9: bool,
+        real_yolo_dir: str,
+        resume: bool
+    ):
+        """Start the pipeline execution.
+
+        Yields progress updates for the UI.
+        """
+        self.is_running = True
+        log_lines = []
+
+        # Validation
+        if not dataset_path:
+            yield (
+                gr.update(visible=True),
+                gr.update(visible=False),
+                "❌ Lỗi: Vui lòng chọn thư mục dataset",
+                0, "0%",
+                "Vui lòng chọn thư mục dataset",
+                "*Lỗi: Chưa chọn dataset*", "---", "---", [], []
+            )
+            return
+
+        # Get phases to run
+        phases = get_phases_to_run(phase6, phase7, phase8, phase9)
+        if not phases:
+            yield (
+                gr.update(visible=True),
+                gr.update(visible=False),
+                "❌ Lỗi: Vui lòng chọn ít nhất 1 phase",
+                0, "0%",
+                "Vui lòng chọn ít nhất 1 phase",
+                "*Lỗi: Chưa chọn phase*", "---", "---", [], []
+            )
+            return
+
+        # Load preset
+        try:
+            config = self.preset_manager.load_preset(preset_name)
+        except Exception as e:
+            yield (
+                gr.update(visible=True),
+                gr.update(visible=False),
+                f"❌ Lỗi load preset: {e}",
+                0, "0%",
+                f"Lỗi: {e}",
+                "*Lỗi*", "---", "---", [], []
+            )
+            return
+
+        # Apply expert overrides
+        if expert_mode:
+            overrides = {
+                "total_images": total_images,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "model_size": model_size,
+            }
+            config = self.preset_manager.apply_overrides(config, overrides)
+
+        # Validate config
+        errors = self.preset_manager.validate_config(config)
+        if errors:
+            yield (
+                gr.update(visible=True),
+                gr.update(visible=False),
+                f"❌ Lỗi config: {', '.join(errors)}",
+                0, "0%",
+                f"Lỗi: {', '.join(errors)}",
+                "*Lỗi config*", "---", "---", [], []
+            )
+            return
+
+        # Convert to PipelineConfig
+        pipeline_config = self.preset_manager.config_to_pipeline_config(config)
+        pipeline_config.dataset_path = dataset_path
+        pipeline_config.phases_to_run = phases
+
+        if phase9 and real_yolo_dir:
+            pipeline_config.real_yolo_dir = real_yolo_dir
+
+        log_lines.append(f"🚀 Bắt đầu pipeline với preset: {preset_name}")
+        log_lines.append(f"📋 Các phase: {phases}")
+        log_lines.append(f"🖼️ Số ảnh: {pipeline_config.total_images}")
+
+        # Create orchestrator (mock in demo mode)
+        if DEMO_MODE:
+            self.current_orchestrator = MockPipelineOrchestrator(
+                config=pipeline_config,
+                progress_callback=lambda msg: log_lines.append(format_log_line(msg)),
+                phases_to_run=phases,
+            )
+        else:
+            self.current_orchestrator = PipelineOrchestrator(
+                config=pipeline_config,
+                progress_callback=lambda msg: log_lines.append(format_log_line(msg)),
+                phases_to_run=phases,
+            )
+
+        # Run in background thread
+        result_holder = [None]
+        error_holder = [None]
+
+        def run_in_thread():
+            try:
+                result_holder[0] = self.current_orchestrator.run_all()
+            except Exception as e:
+                error_holder[0] = e
+
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+
+        # Yield progress updates while running
+        total_phases = len(phases)
+        current_phase_idx = 0
+
+        while thread.is_alive():
+            import time
+            time.sleep(0.5)
+
+            # Update progress
+            phase_pct = 50  # Simplified - would need progress tracker for real %
+            overall_pct = ((current_phase_idx) / total_phases) * 100 + phase_pct / total_phases
+
+            log_text = '\n'.join(log_lines[-30:])  # Last 30 lines
+
+            yield (
+                gr.update(visible=False),
+                gr.update(visible=True),
+                f"⚙️ Phase {phases[current_phase_idx]}/9: {PHASE_DEFINITIONS.get(phases[current_phase_idx], {}).get('name', 'Unknown')}",
+                min(overall_pct, 99),
+                f"{overall_pct:.0f}%",
+                log_text,
+                "*⏳ Đang chạy...*",
+                "---",
+                "---",
+                [],
+                []
+            )
+
+        thread.join()
+
+        # Get results
+        if error_holder[0]:
+            log_lines.append(f"❌ Lỗi: {error_holder[0]}")
+        elif result_holder[0]:
+            result = result_holder[0]
+            if result.success:
+                log_lines.append("✅ Pipeline hoàn thành!")
+            else:
+                log_lines.append(f"❌ Pipeline thất bại: {result.error_message}")
+
+        # Load results (use local temp dir in demo mode)
+        if DEMO_MODE:
+            import tempfile
+            output_dir = tempfile.mkdtemp(prefix="datamint_demo_")
+            write_fake_results(output_dir)
+        else:
+            output_dir = pipeline_config.output_dir
+
+        qa_results = load_qa_results(output_dir)
+        qa_display = format_qa_display(qa_results)
+
+        val_results = load_validation_results(output_dir)
+        val_display = format_validation_display(val_results)
+
+        sample_imgs = get_sample_images(output_dir)
+
+        # Get run summary
+        if result_holder[0]:
+            result = result_holder[0]
+            phases_completed = [r.phase_name for r in result.phase_results if r.success]
+            summary = format_run_summary(
+                result.total_duration_seconds,
+                pipeline_config.total_images,
+                phases_completed
+            )
+        else:
+            summary = "*Lỗi khi chạy pipeline*"
+
+        log_text = '\n'.join(log_lines)
+
+        yield (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            "✅ Hoàn thành" if result_holder[0] and result_holder[0].success else "❌ Thất bại",
+            100,
+            "100%",
+            log_text,
+            summary,
+            qa_display["ssim"],
+            qa_display["pass_rate"],
+            val_display["table"],
+            sample_imgs
+        )
+
+        self.is_running = False
+        self.current_orchestrator = None
+
+    def cancel_pipeline(self):
+        """Cancel the running pipeline."""
+        if self.current_orchestrator:
+            self.current_orchestrator.cancel()
+        self.is_running = False
+        yield gr.update(visible=False)
+        yield "⏹️ Đã hủy"
+
+
+def create_app(server_port: int = 7860) -> gr.Blocks:
+    """Create and return the Gradio app.
+
+    Args:
+        server_port: Port for server
+
+    Returns:
+        Gradio Blocks
+    """
+    app = PipelineLauncherApp(server_port=server_port)
+    return app.build_ui()
+
+
+def main():
+    """Main entry point."""
+    import sys
+    global DEMO_MODE
+
+    if "--demo" in sys.argv:
+        DEMO_MODE = True
+        os.environ["DEMO_MODE"] = "1"
+        # Re-import demo modules if flag was passed via CLI
+        global MockPipelineOrchestrator, write_fake_results
+        from .demo_pipeline_runner import MockPipelineOrchestrator
+        from .demo_results_data import write_fake_results
+
+    launcher = PipelineLauncherApp()
+    app = launcher.build_ui()
+    app.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        inbrowser=False,
+        theme=launcher._theme,
+        css=launcher._css,
+        show_error=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
