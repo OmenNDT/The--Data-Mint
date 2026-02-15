@@ -41,7 +41,7 @@ PHASE_DEFINITIONS = {
     6: {
         "name": "Tạo Ảnh",
         "script": "batch_manager/batch-production-main.py",
-        "description": "Tạo ảnh tổng hợp",
+        "description": "Tạo ảnh tổng hợp (ComfyUI + ControlNet Inpaint)",
     },
     7: {
         "name": "Hậu xử lý",
@@ -151,15 +151,15 @@ class PipelineOrchestrator:
         """
         args = []
 
-        if phase_id == 6:  # Generation
+        if phase_id == 6:  # Generation (ComfyUI batch)
             args.extend(["--config", self.config.config_path])
             if self.config.pilot_mode:
                 args.append("--pilot")
 
         elif phase_id == 7:  # Post-processing
-            # Use output from generation phase
-            synth_dir = f"{self.config.output_dir}/synthetic"
-            output_dir = f"{self.config.output_dir}/datasets"
+            # output_dir already points to synthetic output base (e.g. output/synthetic)
+            synth_dir = self.config.output_dir
+            output_dir = str(Path(self.config.output_dir).parent / "datasets")
             
             args.extend([
                 "--synthetic-dir", synth_dir,
@@ -170,9 +170,9 @@ class PipelineOrchestrator:
             ])
 
         elif phase_id == 8:  # QA
-            synth_dir = f"{self.config.output_dir}/synthetic"
-            dataset_dir = f"{self.config.output_dir}/datasets"
-            qa_output = f"{self.config.output_dir}/qa-reports"
+            synth_dir = self.config.output_dir
+            dataset_dir = str(Path(self.config.output_dir).parent / "datasets")
+            qa_output = str(Path(self.config.output_dir).parent / "qa-reports")
             
             args.extend([
                 "--synthetic-dir", synth_dir,
@@ -284,13 +284,17 @@ class PipelineOrchestrator:
                 overall_success = False
                 break
 
+            # Use per-phase python if specified, otherwise default
+            phase_python = phase_def.get("python", None)
+
             # Run phase
             result = self.phase_runner.run(
                 phase_id=phase_id,
                 phase_name=phase_def["name"],
                 script_path=script_path,
                 args=args,
-                progress_callback=self._log
+                progress_callback=self._log,
+                python_override=phase_python,
             )
 
             phase_results.append(result)

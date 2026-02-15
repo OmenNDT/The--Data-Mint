@@ -49,6 +49,9 @@ from .ui_results_panel import (
     format_validation_display,
     format_run_summary
 )
+from .ui_auto_label_panel import create_auto_label_tab
+from .ui_training_panel import create_training_tab
+from .ui_generation_panel import create_generation_tab
 
 if DEMO_MODE:
     from .demo_pipeline_runner import MockPipelineOrchestrator
@@ -235,6 +238,15 @@ class PipelineLauncherApp:
                 gr.Markdown("### Ảnh mẫu")
                 gallery = gr.Gallery(columns=6)
 
+            with gr.Tab("🧠 Training LoRA"):
+                training_load_info = create_training_tab()
+
+            with gr.Tab("🖼️ Tạo Ảnh (Phase 6)"):
+                generation_load_info = create_generation_tab()
+
+            with gr.Tab("🏷️ Tự động Gán nhãn"):
+                create_auto_label_tab()
+
             # Event handlers
             browse_fn = (lambda: "./dataset/demo") if DEMO_MODE else browse_folder
             browse_btn.click(
@@ -298,6 +310,20 @@ class PipelineLauncherApp:
                 fn=self.cancel_pipeline,
                 outputs=[cancel_btn]
             )
+
+            # Auto-refresh training status on page load
+            if training_load_info:
+                app.load(
+                    fn=training_load_info["load_fn"],
+                    outputs=training_load_info["load_outputs"],
+                )
+
+            # Auto-refresh ComfyUI status on page load
+            if generation_load_info:
+                app.load(
+                    fn=generation_load_info["load_fn"],
+                    outputs=generation_load_info["load_outputs"],
+                )
 
         return app
 
@@ -406,10 +432,13 @@ class PipelineLauncherApp:
                 phases_to_run=phases,
             )
         else:
+            # Use the current interpreter so venv packages are available
+            import sys
             self.current_orchestrator = PipelineOrchestrator(
                 config=pipeline_config,
                 progress_callback=lambda msg: log_lines.append(format_log_line(msg)),
                 phases_to_run=phases,
+                python_executable=sys.executable,
             )
 
         # Run in background thread

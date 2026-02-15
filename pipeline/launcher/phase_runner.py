@@ -48,7 +48,8 @@ class PhaseRunner:
         phase_name: str,
         script_path: Path,
         args: List[str],
-        progress_callback: Optional[Callable[[str], None]] = None
+        progress_callback: Optional[Callable[[str], None]] = None,
+        python_override: Optional[str] = None,
     ) -> PhaseResult:
         """Run a single pipeline phase.
 
@@ -65,8 +66,9 @@ class PhaseRunner:
         import time
         start_time = time.time()
 
-        # Build command
-        cmd = [self.python_executable, str(script_path)] + args
+        # Build command (use per-phase python if provided)
+        python_exe = python_override or self.python_executable
+        cmd = [python_exe, str(script_path)] + args
 
         logger.info(f"Running phase {phase_id} ({phase_name}): {' '.join(cmd)}")
 
