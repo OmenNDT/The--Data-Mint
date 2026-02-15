@@ -1,0 +1,56 @@
+# Defect-specific prompt templates for ComfyUI inpainting workflow
+# Each defect type has optimized positive/negative prompts and LoRA configuration
+
+defect_prompts:
+  crack:
+    lora_name: "xray_crack_lora_r32.safetensors"
+    positive: "xray_crack, weld crack defect, radiographic image, high contrast, sharp edges, linear discontinuity"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, round shapes"
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.85
+
+  porosity:
+    lora_name: "xray_porosity_lora_r32.safetensors"
+    positive: "xray_porosity, weld porosity defect, radiographic image, scattered dark spots, gas pockets, spherical voids"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, linear defects, cracks"
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.80
+
+  inclusion:
+    lora_name: "xray_inclusion_lora_r32.safetensors"
+    positive: "xray_inclusion, slag inclusion defect, radiographic image, irregular dark region, non-metallic particles, trapped material"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, regular patterns, uniform shapes"
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.82
+
+  lack_of_fusion:
+    lora_name: "xray_lof_lora_r32.safetensors"
+    positive: "xray_lof, lack of fusion defect, radiographic image, linear indication, unbonded region, weld interface separation"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, porosity"
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.85
+
+  undercut:
+    lora_name: "xray_undercut_lora_r32.safetensors"
+    positive: "xray_undercut, weld undercut defect, radiographic image, groove along weld toe, material reduction, edge discontinuity"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, internal defects, porosity"
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.83
+
+# Sampler configuration (shared across all defect types)
+sampler_config:
+  sampler_name: "euler"
+  scheduler: "normal"
+  steps: 20
+  cfg: 7.0
+
+# Model paths (relative to ComfyUI models directory)
+model_paths:
+  checkpoint: "checkpoints/sd-v1-5-pruned-emaonly.safetensors"
+  controlnet: "controlnet/control_v11p_sd15_inpaint.pth"
+  lora_dir: "loras/"

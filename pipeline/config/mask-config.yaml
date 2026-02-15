@@ -1,0 +1,46 @@
+# Mask Generation Configuration
+# Parameters for procedural defect mask generation
+
+# Weld Region of Interest (ROI)
+# Defines the horizontal band where defects can appear
+weld_roi:
+  center_offset: 0          # Vertical offset from image center (pixels, positive = down)
+  zone_height_pct: 0.4      # Weld zone height as fraction of image height (0.4 = 40%)
+
+# Crack defect parameters
+crack:
+  width_range: [1, 4]                # Line thickness in pixels
+  length_pct_range: [0.3, 0.8]       # Length as fraction of image width
+  branch_probability: 0.2             # Probability of secondary branch (0-1)
+  angle_variation: 15.0               # Max angle deviation from horizontal (degrees)
+
+# Porosity defect parameters
+porosity:
+  count_range: [5, 30]                # Number of gas pores
+  radius_range: [2, 8]                # Pore radius in pixels
+  rayleigh_scale: 30.0                # Rayleigh distribution scale for scatter
+
+# Lack of Fusion defect parameters
+lack_of_fusion:
+  length_pct_range: [0.2, 0.6]       # Line length as fraction of image width
+  thickness_range: [2, 5]             # Line thickness in pixels
+  position: "fusion_boundary"         # "fusion_boundary" or "center"
+  wave_amplitude: 3.0                 # Sine wave amplitude for waviness
+  wave_frequency: 0.05                # Sine wave frequency (cycles per pixel)
+
+# Slag Inclusion defect parameters
+slag_inclusion:
+  blob_count_range: [1, 3]            # Number of inclusion blobs
+  diameter_range: [10, 50]            # Blob diameter in pixels
+  gaussian_sigma: 2.0                 # Gaussian smoothing for organic edges
+  threshold: 0.4                      # Noise threshold for binarization (0-1)
+
+# Undercut defect parameters
+undercut:
+  length_pct_range: [0.2, 0.5]       # Line length as fraction of image width
+  thickness_range: [2, 4]             # Line thickness in pixels
+  edge_offset_range: [5, 15]          # Distance from weld edge in pixels
+
+# Feathering parameters
+feathering:
+  blur_radius: 5                      # Gaussian blur radius for mask edges

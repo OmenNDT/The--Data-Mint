@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Model files
+*.pt
+*.safetensors
+*.ckpt
+
+# Large data / model directories
+models/
+dataset/
+comfyui/
+
+# Generated outputs
+output/
+pipeline/test_output/
+pipeline/checkpoints/
+
+# IDE / tools
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+repomix-output.xml
+DOCUMENTATION_MANIFEST.txt
+
+# External tools
+claudekit-engineer/
+kohya-ss/
+
+# Stray Windows path artifacts
+E\xef\x80\xba*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
