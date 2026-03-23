@@ -62,7 +62,7 @@ class BatchJobScheduler:
                     "job_id": len(self.jobs),
                     "defect_type": defect_type,
                     "seed": random.randint(0, 2**32 - 1),
-                    "background_image": None,  # Assigned when processing
+                    "background_image": random.choice(self.background_images),
                     "status": "pending"
                 }
                 self.jobs.append(job)
@@ -86,9 +86,6 @@ class BatchJobScheduler:
             return None
 
         job = self.jobs[self.current_index]
-
-        # Assign random background image
-        job["background_image"] = random.choice(self.background_images)
 
         return job
 
@@ -121,6 +118,14 @@ class BatchJobScheduler:
         # Deep copy workflow template
         workflow = json.loads(json.dumps(self.workflow_template))
 
+        # Set checkpoint model from prompt templates (supports benchmark model selection)
+        model_paths = self.prompts_config.get("model_paths", {})
+        if model_paths.get("checkpoint"):
+            workflow["1"]["inputs"]["ckpt_name"] = model_paths["checkpoint"]
+        # Set external VAE if specified (requires VAELoader node "13" in workflow)
+        if model_paths.get("vae") and "13" in workflow:
+            workflow["13"]["inputs"]["vae_name"] = model_paths["vae"]
+
         # Update node parameters
         # Node 2: LoRA Loader
         workflow["2"]["inputs"]["lora_name"] = defect_config["lora_name"]
@@ -130,30 +135,43 @@ class BatchJobScheduler:
         # Node 3: Positive prompt
         workflow["3"]["inputs"]["text"] = defect_config["positive"]
 
-        # Node 4: Negative prompt (use default from template)
-        # Already set in template
+        # Node 4: Negative prompt — must use per-class negative to exclude other defect types
+        if "negative" in defect_config:
+            workflow["4"]["inputs"]["text"] = defect_config["negative"]
 
         # Node 5: Load background image
         workflow["5"]["inputs"]["image"] = background_filename
 
-        # Node 6: Load mask image
-        workflow["6"]["inputs"]["image"] = mask_filename
-
-        # Node 9: ControlNet strength
-        workflow["9"]["inputs"]["strength"] = defect_config.get("controlnet_strength", 0.8)
-
-        # Node 10: KSampler
-        sampler_config = self.config["sampler"]
-        workflow["10"]["inputs"]["seed"] = seed
-        workflow["10"]["inputs"]["steps"] = sampler_config["steps"]
-        workflow["10"]["inputs"]["cfg"] = sampler_config["cfg"]
-        workflow["10"]["inputs"]["sampler_name"] = sampler_config["name"]
-        workflow["10"]["inputs"]["scheduler"] = sampler_config["scheduler"]
-        workflow["10"]["inputs"]["denoise"] = defect_config.get("denoise", 0.85)
-
-        # Node 12: SaveImage with unique prefix
+        # Detect workflow type by SaveImage node ID:
+        #   img2img workflow:  node 9  = SaveImage (KSampler at node 7)
+        #   inpaint workflow:  node 12 = SaveImage (KSampler at node 10, mask at node 6)
         output_prefix = f"{defect_type}_{job['job_id']:06d}"
-        workflow["12"]["inputs"]["filename_prefix"] = output_prefix
+
+        is_img2img = workflow.get("9", {}).get("class_type") == "SaveImage"
+
+        if is_img2img:
+            # img2img workflow (sd15-img2img-lora-defect-workflow.json)
+            sampler_config = self.config["sampler"]
+            workflow["7"]["inputs"]["seed"] = seed
+            workflow["7"]["inputs"]["steps"] = sampler_config["steps"]
+            workflow["7"]["inputs"]["cfg"] = sampler_config.get("cfg", 9.0)
+            workflow["7"]["inputs"]["sampler_name"] = sampler_config["name"]
+            workflow["7"]["inputs"]["scheduler"] = sampler_config["scheduler"]
+            workflow["7"]["inputs"]["denoise"] = defect_config.get("denoise", 0.75)
+            workflow["9"]["inputs"]["filename_prefix"] = output_prefix
+        else:
+            # inpaint workflow (sd15-lora-controlnet-inpaint-batch-api-workflow.json)
+            # Node 6: Load mask image
+            if "6" in workflow and mask_filename:
+                workflow["6"]["inputs"]["image"] = mask_filename
+            sampler_config = self.config["sampler"]
+            workflow["10"]["inputs"]["seed"] = seed
+            workflow["10"]["inputs"]["steps"] = sampler_config["steps"]
+            workflow["10"]["inputs"]["cfg"] = sampler_config.get("cfg", 7.0)
+            workflow["10"]["inputs"]["sampler_name"] = sampler_config["name"]
+            workflow["10"]["inputs"]["scheduler"] = sampler_config["scheduler"]
+            workflow["10"]["inputs"]["denoise"] = defect_config.get("denoise", 0.85)
+            workflow["12"]["inputs"]["filename_prefix"] = output_prefix
 
         return workflow
 

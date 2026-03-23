@@ -21,6 +21,8 @@ import traceback
 from pathlib import Path
 from typing import Dict
 
+import cv2
+import numpy as np
 import yaml
 from PIL import Image
 
@@ -41,6 +43,79 @@ def load_config(config_path: str) -> Dict:
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
     return config
+
+
+def load_mask_config() -> Dict:
+    """Load mask-config.yaml for dilation settings."""
+    mask_config_path = Path(__file__).parent.parent / "config" / "mask-config.yaml"
+    if mask_config_path.exists():
+        with open(mask_config_path, "r") as f:
+            return yaml.safe_load(f)
+    return {}
+
+
+def apply_dark_defect_convention(
+    image_path: Path, annotation_mask_path: str, background_path: str = None, defect_type: str = None
+):
+    """
+    Post-process generated image to make defects appear dark (correct RT convention).
+
+    Two-step approach:
+    1. Restore original background OUTSIDE annotation mask → eliminates LoRA/inpaint halo
+    2. Darken inside annotation mask → correct RT film convention (void = dark)
+
+    Args:
+        image_path: Path to generated PNG to modify in-place
+        annotation_mask_path: Path to binary annotation mask (white = defect region)
+        background_path: Path to original clean background patch used for inpainting
+        defect_type: Skip darkening for metallic_inclusion (dense metal = bright)
+    """
+    # metallic_inclusion is dense metal → absorbs more X-ray → appears bright (correct, skip)
+    if defect_type == "metallic_inclusion":
+        return
+
+    try:
+        img_pil = Image.open(image_path).convert("L")
+        mask_pil = Image.open(annotation_mask_path).convert("L").resize(img_pil.size, Image.NEAREST)
+
+        img = np.array(img_pil, dtype=np.float32)
+        mask_arr = np.array(mask_pil, dtype=np.uint8)  # binary: 0 or 255
+
+        # --- Step 1: Hard-replace background OUTSIDE annotation mask ---
+        # Root cause of halo: LoRA generates bright seam in zone [annot_mask → inpaint_mask].
+        # Wide blend_mask let 50% of halo bleed through → visible on dark backgrounds.
+        # Fix: near-hard cut with sigma=1.5 (3px aliasing only) → ~97% halo replaced by bg.
+        if background_path:
+            bg_pil = Image.open(background_path).convert("L").resize(img_pil.size, Image.BILINEAR)
+            bg = np.array(bg_pil, dtype=np.float32)
+
+            # Minimal anti-aliasing only — NOT a wide blend. No dilation.
+            keep_mask = cv2.GaussianBlur(mask_arr.astype(np.float32), (0, 0), sigmaX=1.5) / 255.0
+            if keep_mask.max() > 0:
+                keep_mask = keep_mask / keep_mask.max()  # normalize core to 1.0
+
+            # Outside annotation mask → pure original background (halo eliminated)
+            # Inside annotation mask → keep inpainted content (to be darkened next)
+            img = img * keep_mask + bg * (1.0 - keep_mask)
+
+        # --- Step 2: Darken defect interior to correct RT convention (void = dark) ---
+        # sigma=2 → 4-5px smooth edge, no concentric rings
+        darken_mask = cv2.GaussianBlur(mask_arr.astype(np.float32), (0, 0), sigmaX=2.0) / 255.0
+        if darken_mask.max() > 0:
+            darken_mask = darken_mask / darken_mask.max()  # normalize: core peak = 1.0
+
+        # Per-defect darkening strength (LOF/LOP subtler: blends into background like in real RT)
+        DARKEN_BY_TYPE = {
+            "lack_of_fusion": 0.85,
+            "lack_of_penetration": 0.78,
+            "elongated_cavity": 0.65,  # Softer than default 0.92 — wormhole blends into metal
+        }
+        DARKEN_STRENGTH = DARKEN_BY_TYPE.get(defect_type, 0.92)
+        result = img * (1.0 - darken_mask * DARKEN_STRENGTH)
+        result = np.clip(result, 0, 255).astype(np.uint8)
+        Image.fromarray(result, mode="L").save(str(image_path))
+    except Exception as e:
+        print(f"  [warn] Dark convention post-processing skipped: {e}")
 
 
 def save_metadata(job: Dict, output_path: Path, config: Dict):
@@ -75,6 +150,7 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
     print("="*60)
 
     config = load_config(config_path)
+    mask_config = load_mask_config()
 
     # Pilot mode: reduce total images but keep user's defect distribution
     if pilot_mode:
@@ -103,7 +179,12 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
     print(f"  ✓ ComfyUI server OK")
 
     scheduler = BatchJobScheduler(config)
-    prefetcher = MaskPrefetcher(config)
+    prefetcher = MaskPrefetcher(config, mask_config=mask_config)
+
+    dilation_enabled = mask_config.get("inpaint_dilation", {}).get("enabled", False)
+    if dilation_enabled:
+        dil_cfg = mask_config["inpaint_dilation"]
+        print(f"  ✓ Mask dilation enabled: kernel={dil_cfg['kernel_size']}px, shape={dil_cfg['kernel_shape']}")
     thermal_monitor = GPUThermalMonitor(config["thermal"])
     checkpoint_manager = CheckpointManager(config)
 
@@ -127,9 +208,8 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             checkpoint_manager.backup_checkpoint()
             print(f"  Non-interactive mode, starting fresh (checkpoint backed up)")
 
-    # Pre-fill mask buffer
-    print("\n[3/7] Pre-filling mask buffer...")
-    prefetcher.prefill_buffer(scheduler.jobs)
+    # Mask generation: inline per-job (guarantees type/seed match)
+    print("\n[3/7] Mask generation: inline mode (no prefetch buffer)")
 
     # Main loop
     print("\n[4/7] Starting main production loop...")
@@ -139,6 +219,8 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
 
     start_time = time.time()
     retry_counts = {}
+    # Cache masks per job_id so retries reuse the same mask (don't drain prefetcher buffer)
+    cached_masks = {}
 
     while True:
         # Get next job
@@ -163,24 +245,28 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             if thermal_monitor.check_and_throttle():
                 thermal_monitor.wait_until_cool()
 
-            # Get pre-generated mask
-            mask_path = prefetcher.get_next_mask()
+            # Generate mask inline to guarantee type/seed match (no async buffer swap risk)
+            if job_id in cached_masks:
+                mask_result = cached_masks[job_id]
+            else:
+                from batch_manager.mask_prefetch_worker_pool import _generate_mask_worker
+                bg_str = str(job["background_image"]) if job.get("background_image") else None
+                mask_result = _generate_mask_worker(
+                    defect_type, job["seed"], config["generation"]["resolution"],
+                    mask_config.get("inpaint_dilation") if mask_config else None,
+                    bg_str,
+                )
+                cached_masks[job_id] = mask_result
 
-            if mask_path is None:
-                raise RuntimeError("Mask prefetcher returned None")
-
-            # Submit next mask generation task
-            next_job_idx = scheduler.current_index + prefetcher.max_buffer_size
-            if next_job_idx < len(scheduler.jobs):
-                next_job = scheduler.jobs[next_job_idx]
-                prefetcher.submit_prefetch(next_job["defect_type"], next_job["seed"])
+            annotation_mask_path = mask_result["annotation_path"]
+            inpaint_mask_path = mask_result["inpaint_path"]
 
             # Upload background image
             bg_path = str(job["background_image"])
             bg_filename = client.upload_image(bg_path)
 
-            # Upload mask
-            mask_filename = client.upload_image(mask_path)
+            # Upload dilated inpainting mask to ComfyUI
+            mask_filename = client.upload_image(inpaint_mask_path)
 
             # Build workflow
             workflow = scheduler.build_workflow(job, bg_filename, mask_filename)
@@ -213,20 +299,28 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             output_path = scheduler.get_output_path(job, is_mask=False)
             client.download_output(server_filename, str(output_path))
 
-            # Save mask copy if configured
+            # Apply dark defect convention: reflect bright LoRA defects to dark
+            apply_dark_defect_convention(
+                output_path, annotation_mask_path, str(job["background_image"]),
+                defect_type=job["defect_type"]
+            )
+
+            # Save original thin mask as ground truth annotation
             if config["output"]["save_masks"]:
                 mask_output_path = scheduler.get_output_path(job, is_mask=True)
-                Image.open(mask_path).save(mask_output_path)
+                Image.open(annotation_mask_path).save(mask_output_path)
 
             # Save metadata if configured
             if config["output"]["save_metadata"]:
                 save_metadata(job, output_path, config)
 
-            # Cleanup temp mask file
-            Path(mask_path).unlink()
+            # Cleanup temp mask files
+            Path(annotation_mask_path).unlink(missing_ok=True)
+            Path(inpaint_mask_path).unlink(missing_ok=True)
 
-            # Mark complete
+            # Mark complete and clear mask cache for this job
             scheduler.mark_complete(job)
+            cached_masks.pop(job_id, None)
 
             # Checkpoint
             if checkpoint_manager.should_checkpoint(scheduler.completed_count):
@@ -254,11 +348,11 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             else:
                 print(f"  Failed after {max_retries} retries, skipping job")
                 scheduler.mark_failed(job, str(e))
+                cached_masks.pop(job_id, None)
                 traceback.print_exc()
 
     # Shutdown
     print("\n[5/7] Shutting down...")
-    prefetcher.shutdown()
 
     # Final checkpoint
     print("\n[6/7] Saving final state...")
@@ -297,7 +391,7 @@ def main():
     )
     parser.add_argument(
         "--config",
-        default="/mnt/e/The Data Mint/pipeline/config/batch-config.yaml",
+        default=str(Path(__file__).parent.parent / "config" / "batch-config.yaml"),
         help="Path to batch config YAML file"
     )
     parser.add_argument(
