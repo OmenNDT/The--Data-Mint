@@ -52,6 +52,8 @@ from .ui_results_panel import (
 from .ui_auto_label_panel import create_auto_label_tab
 from .ui_training_panel import create_training_tab
 from .ui_generation_panel import create_generation_tab
+from .ui_theme import create_theme, CUSTOM_CSS
+from .ui_icons import icon, get_ui_icon, get_tab_label, get_button_label
 
 if DEMO_MODE:
     from .demo_pipeline_runner import MockPipelineOrchestrator
@@ -99,60 +101,75 @@ class PipelineLauncherApp:
             gpu_available, gpu_msg = check_gpu_available()
             comfyui_available, comfyui_msg = check_comfyui_connection()
 
-        # Build UI (theme/css passed to launch() for Gradio 6 compat)
-        self._theme = gr.themes.Soft(primary_hue="blue")
-        self._css = """
-            .main-header {text-align: center; margin-bottom: 20px;}
-            .phase-label {font-size: 1.2em; font-weight: bold;}
-            .run-summary {background: #f0f0f0; padding: 10px; border-radius: 8px;}
-            .demo-banner {background: #fff3cd; padding: 8px 16px; border-radius: 6px; text-align: center; font-weight: bold;}
-        """
-        with gr.Blocks(title="The Data Mint - One-Click Launcher") as app:
-            # Header
-            gr.Markdown(
-                """
-                # 🚀 The Data Mint - One-Click Training Launcher
-                *Giao diện chuyên nghiệp cho kỹ sư AI*
-                """,
-                elem_classes=["main-header"]
-            )
+        # Build UI with custom dark theme
+        self._theme = create_theme()
+        self._css = CUSTOM_CSS
 
-            # Demo mode banner
+        with gr.Blocks(
+            title="The Data Mint - One-Click Launcher",
+            elem_classes=["dm-app"]
+        ) as app:
+            # ===== HEADER =====
+            header_html = f'''
+            <div class="dm-header">
+                <h1>The Data Mint</h1>
+                <p>One-Click Training Launcher — Giao diện chuyên nghiệp cho kỹ sư AI</p>
+                <div class="dm-badge">
+                    {icon("zap", 12, "#34d399")}
+                    <span>Pipeline 9 Phases</span>
+                </div>
+            </div>
+            '''
+            gr.HTML(header_html)
+
+            # ===== DEMO BANNER =====
             if DEMO_MODE:
-                gr.Markdown(
-                    "⚠️ **DEMO MODE** — Pipeline giả lập, không cần GPU/ComfyUI",
-                    elem_classes=["demo-banner"]
+                gr.HTML(
+                    '<div class="dm-demo-banner">'
+                    f'{icon("warning", 14, "#fbbf24")}'
+                    '<span style="margin-left:8px;">DEMO MODE — Pipeline giả lập, không cần GPU/ComfyUI</span>'
+                    '</div>'
                 )
 
-            # Status bar
-            status_parts = []
-            if gpu_available:
-                status_parts.append(f"✅ GPU: {gpu_msg}")
-            else:
-                status_parts.append(f"❌ GPU: {gpu_msg}")
+            # ===== STATUS BAR =====
+            gpu_status_class = "dm-status-indicator" if gpu_available else "dm-status-indicator offline"
+            gpu_status_text = "Đã sẵn sàng" if gpu_available else gpu_msg
+            comfy_status_class = "dm-status-indicator" if comfyui_available else "dm-status-indicator offline"
+            comfy_status_text = "Đã kết nối" if comfyui_available else "Chưa kết nối"
 
-            if comfyui_available:
-                status_parts.append("✅ ComfyUI")
-            else:
-                status_parts.append("⚠️ ComfyUI: Chưa kết nối")
+            status_html = f'''
+            <div class="dm-status-bar">
+                <div class="dm-status-item">
+                    <div class="{gpu_status_class}"></div>
+                    <span><strong>GPU:</strong> {gpu_status_text}</span>
+                </div>
+                <div class="dm-status-item">
+                    <div class="{comfy_status_class}"></div>
+                    <span><strong>ComfyUI:</strong> {comfy_status_text}</span>
+                </div>
+                <div class="dm-status-item">
+                    {icon("clock", 14, "#94a3b8")}
+                    <span><strong>Ước tính:</strong> ~30 phút</span>
+                </div>
+            </div>
+            '''
+            gr.HTML(status_html)
 
-            gr.Markdown(" | ".join(status_parts))
-
-            with gr.Tab("⚙️ Thiết lập"):
+            with gr.Tab(get_tab_label("tab_setup")):
                 # Dataset selection
-                with gr.Group():
-                    gr.Markdown("### 📁 Dataset")
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("folder", 18, "#10b981")} Dataset</div>')
                     with gr.Row():
                         dataset_path = gr.Textbox(
                             label="Thư mục Dataset",
-                            placeholder="Chọn thư mục...",
+                            placeholder="Chọn thư mục chứa ảnh X-ray gốc...",
                             scale=4
                         )
-                        browse_btn = gr.Button("📂 Chọn", scale=1)
+                        browse_btn = gr.Button(get_button_label("browse"), scale=1, variant="secondary")
 
                 # Preset selection
-                with gr.Group():
-                    gr.Markdown("### ⚙️ Cấu hình")
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("sliders", 18, "#10b981")} Cấu hình</div>')
                     with gr.Row():
                         preset_dropdown = gr.Dropdown(
                             choices=preset_choices,
@@ -166,7 +183,7 @@ class PipelineLauncherApp:
 
                     # Expert mode
                     expert_checkbox = gr.Checkbox(
-                        label="🔧 Chế độ Expert",
+                        label="Chế độ Expert (tinh chỉnh tham số)",
                         value=False
                     )
 
@@ -183,8 +200,8 @@ class PipelineLauncherApp:
                             )
 
                 # Phase selection
-                with gr.Group():
-                    gr.Markdown("### 📋 Các Phase")
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("layers", 18, "#10b981")} Các Phase</div>')
                     with gr.Row():
                         phase6_check = gr.Checkbox(label="6: Tạo ảnh", value=True)
                         phase7_check = gr.Checkbox(label="7: Hậu xử lý", value=True)
@@ -194,57 +211,97 @@ class PipelineLauncherApp:
 
                     with gr.Group(visible=False) as phase9_group:
                         real_yolo_dir = gr.Textbox(
-                            label="📁 Dataset YOLO thực",
-                            placeholder="Đường dẫn..."
+                            label="Dataset YOLO thực",
+                            placeholder="Đường dẫn đến dataset thực (YOLO format)..."
                         )
 
                 # Checkpoint
                 checkpoint_info = get_checkpoint_info()
-                if checkpoint_info:
-                    checkpoint_text = f"💾 *Checkpoint: {checkpoint_info['images_generated']} ảnh - {checkpoint_info['last_updated']}*"
-                    resume_checkbox = gr.Checkbox(label="Tiếp tục từ checkpoint", value=False)
-                else:
-                    checkpoint_text = "*💾 Không có checkpoint*"
-                    resume_checkbox = gr.Checkbox(visible=False)
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("save", 18, "#10b981")} Checkpoint</div>')
+                    if checkpoint_info:
+                        checkpoint_text = f"**Checkpoint:** {checkpoint_info['images_generated']} ảnh — {checkpoint_info['last_updated']}"
+                        resume_checkbox = gr.Checkbox(label="Tiếp tục từ checkpoint", value=False)
+                    else:
+                        checkpoint_text = "*Không có checkpoint nào được tìm thấy*"
+                        resume_checkbox = gr.Checkbox(visible=False)
 
-                gr.Markdown(checkpoint_text)
+                    gr.Markdown(checkpoint_text)
 
                 # Action buttons
                 with gr.Row():
-                    run_btn = gr.Button("🚀 Chạy Pipeline", variant="primary", size="lg")
-                    cancel_btn = gr.Button("⏹️ Hủy", variant="stop", size="lg", visible=False)
+                    run_btn = gr.Button(
+                        get_button_label("run_pipeline"),
+                        variant="primary",
+                        size="lg",
+                        elem_classes=["dm-btn-primary"]
+                    )
+                    cancel_btn = gr.Button(
+                        get_button_label("cancel"),
+                        variant="stop",
+                        size="lg",
+                        visible=False,
+                        elem_classes=["dm-btn-danger"]
+                    )
 
-            with gr.Tab("📝 Tiến trình"):
-                phase_label = gr.Markdown("**Phase:** Chờ chạy...")
-                with gr.Row():
-                    progress_bar = gr.Slider(0, 100, 0, label="Tiến trình", interactive=False, scale=4)
-                    progress_pct = gr.Textbox("0%", scale=1, interactive=False)
-                log_display = gr.Textbox(label="Log", lines=25, interactive=False)
+            with gr.Tab(get_tab_label("tab_progress")):
+                # Phase stepper
+                phase_stepper_html = '''
+                <div class="dm-phase-stepper">
+                    <div class="dm-phase-step active"><div class="dm-phase-step-number">1</div><div class="dm-phase-step-label">Chuẩn bị</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">2</div><div class="dm-phase-step-label">Phân tích</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">3</div><div class="dm-phase-step-label">Config</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">4</div><div class="dm-phase-step-label">Tạo ảnh</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">5</div><div class="dm-phase-step-label">Hậu xử lý</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">6</div><div class="dm-phase-step-label">QA</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">7</div><div class="dm-phase-step-label">Đánh giá</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">8</div><div class="dm-phase-step-label">Training</div></div>
+                    <div class="dm-phase-step"><div class="dm-phase-step-number">9</div><div class="dm-phase-step-label">Hoàn thành</div></div>
+                </div>
+                '''
+                gr.HTML(phase_stepper_html)
 
-            with gr.Tab("📊 Kết quả"):
-                with gr.Group():
-                    gr.Markdown("### Tổng kết")
+                # Progress container
+                with gr.Column(elem_classes=["dm-progress-container"]):
+                    phase_label = gr.Markdown("**Phase:** Chờ chạy...")
+                    with gr.Row():
+                        progress_bar = gr.Slider(0, 100, 0, label="Tiến trình", interactive=False, scale=4)
+                        progress_pct = gr.Textbox("0%", scale=1, interactive=False)
+                    log_display = gr.Textbox(label="Log", lines=25, interactive=False)
+
+            with gr.Tab(get_tab_label("tab_results")):
+                # Summary card
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("chart_bar", 18, "#10b981")} Tổng kết</div>')
                     run_summary = gr.Markdown("*Chưa có kết quả*")
-                with gr.Group():
-                    gr.Markdown("### QA")
-                    qa_ssim = gr.Markdown("**SSIM:** ---")
-                    qa_pass = gr.Markdown("**Pass Rate:** ---")
-                with gr.Group():
-                    gr.Markdown("### Validation")
+
+                # QA card
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("shield_check", 18, "#10b981")} QA</div>')
+                    with gr.Row():
+                        qa_ssim = gr.Markdown("**SSIM:** ---")
+                        qa_pass = gr.Markdown("**Pass Rate:** ---")
+
+                # Validation card
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("trending_up", 18, "#10b981")} Đánh giá</div>')
                     val_table = gr.Dataframe(
                         headers=["Ratio", "mAP@0.5", "mAP@0.5:0.95"],
                         value=[]
                     )
-                gr.Markdown("### Ảnh mẫu")
-                gallery = gr.Gallery(columns=6)
 
-            with gr.Tab("🧠 Training LoRA"):
+                # Samples card
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("images", 18, "#10b981")} Ảnh mẫu</div>')
+                    gallery = gr.Gallery(columns=6)
+
+            with gr.Tab(get_tab_label("tab_training")):
                 training_load_info = create_training_tab()
 
-            with gr.Tab("🖼️ Tạo Ảnh (Phase 6)"):
+            with gr.Tab(get_tab_label("tab_generation")):
                 generation_load_info = create_generation_tab()
 
-            with gr.Tab("🏷️ Tự động Gán nhãn"):
+            with gr.Tab(get_tab_label("tab_labeling")):
                 create_auto_label_tab()
 
             # Event handlers
@@ -325,7 +382,7 @@ class PipelineLauncherApp:
                     outputs=generation_load_info["load_outputs"],
                 )
 
-        return app
+        return app, self._theme, self._css
 
     def start_pipeline(
         self,
@@ -550,14 +607,14 @@ class PipelineLauncherApp:
         yield "⏹️ Đã hủy"
 
 
-def create_app(server_port: int = 7860) -> gr.Blocks:
-    """Create and return the Gradio app.
+def create_app(server_port: int = 7860):
+    """Create and return the Gradio app with theme and css.
 
     Args:
         server_port: Port for server
 
     Returns:
-        Gradio Blocks
+        Tuple of (Gradio Blocks, theme, css)
     """
     app = PipelineLauncherApp(server_port=server_port)
     return app.build_ui()
@@ -577,13 +634,13 @@ def main():
         from .demo_results_data import write_fake_results
 
     launcher = PipelineLauncherApp()
-    app = launcher.build_ui()
+    app, theme, css = launcher.build_ui()
     app.launch(
         server_name="0.0.0.0",
         server_port=7860,
         inbrowser=False,
-        theme=launcher._theme,
-        css=launcher._css,
+        theme=theme,
+        css=css,
         show_error=True,
     )
 

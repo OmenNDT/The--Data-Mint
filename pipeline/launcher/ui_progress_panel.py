@@ -1,7 +1,86 @@
-"""UI Progress Panel - Progress bar + log display."""
+"""UI Progress Panel - Progress tracking with phase stepper and custom progress bar.
+
+Replaces simple slider with professional phase stepper + animated progress bar.
+"""
 
 import gradio as gr
 from typing import Any, Dict, Optional
+
+from .ui_icons import icon
+
+
+# =============================================================================
+# PHASE DEFINITIONS
+# =============================================================================
+PHASES = [
+    ("1", "Chuẩn bị"),
+    ("2", "Phân tích"),
+    ("3", "Config"),
+    ("4", "Tạo ảnh"),
+    ("5", "Hậu xử lý"),
+    ("6", "QA"),
+    ("7", "Đánh giá"),
+    ("8", "Training"),
+    ("9", "Hoàn thành"),
+]
+
+
+def create_phase_stepper_html(current_phase: int = 0) -> str:
+    """Create HTML phase stepper for 9 pipeline phases.
+
+    Args:
+        current_phase: Current phase index (0-8, -1 = not started)
+
+    Returns:
+        HTML string for phase stepper
+    """
+    html = '<div class="dm-phase-stepper">'
+    for i, (num, label) in enumerate(PHASES):
+        status = ""
+        if i < current_phase:
+            status = "completed"
+        elif i == current_phase:
+            status = "active"
+
+        html += f'''
+        <div class="dm-phase-step {status}">
+            <div class="dm-phase-step-number">{num}</div>
+            <div class="dm-phase-step-label">{label}</div>
+        </div>
+        '''
+    html += '</div>'
+    return html
+
+
+def create_progress_html(phase_name: str, overall_pct: float, phase_pct: float,
+                         elapsed: str = "0:00", estimate: str = "--:--") -> str:
+    """Create custom progress bar HTML.
+
+    Args:
+        phase_name: Current phase name
+        overall_pct: Overall progress percentage (0-100)
+        phase_pct: Current phase progress percentage (0-100)
+        elapsed: Elapsed time string
+        estimate: Estimated remaining time string
+
+    Returns:
+        HTML string for progress display
+    """
+    return f'''
+    <div class="dm-progress-container">
+        <div class="dm-progress-header">
+            <div class="dm-progress-phase">{icon("activity", 14, "#10b981")} <span style="margin-left:6px;">{phase_name}</span></div>
+            <div class="dm-progress-pct">{overall_pct:.0f}%</div>
+        </div>
+        <div class="dm-progress-bar-track">
+            <div class="dm-progress-bar-fill" style="width: {overall_pct}%"></div>
+        </div>
+        <div class="dm-progress-stats">
+            <span>Phase: {phase_pct:.0f}%</span>
+            <span class="dm-progress-estimate">⏱ {elapsed} / ~{estimate} còn lại</span>
+        </div>
+    </div>
+    '''
 
 
 def create_progress_panel() -> Dict[str, Any]:
@@ -12,51 +91,43 @@ def create_progress_panel() -> Dict[str, Any]:
     """
     components = {}
 
-    with gr.Group():
-        # Phase indicator
-        phase_label = gr.Markdown(
-            value="**Phase hiện tại:** Chờ chạy...",
-            elem_classes=["phase-label"]
-        )
+    # Phase stepper (HTML)
+    phase_stepper = gr.HTML(
+        value=create_phase_stepper_html(-1),
+        label="Pipeline Progress"
+    )
 
-        # Progress bar
-        with gr.Row():
-            progress_bar = gr.Slider(
-                minimum=0,
-                maximum=100,
-                value=0,
-                step=1,
-                label="Tiến trình",
-                interactive=False,
-                scale=4
-            )
-            progress_pct = gr.Textbox(
-                value="0%",
-                interactive=False,
-                scale=1,
-                show_label=False,
-                container=False
-            )
+    # Progress container (HTML)
+    progress_html = gr.HTML(
+        value=create_progress_html("Chờ chạy...", 0, 0),
+        label="Progress"
+    )
 
-        # GPU info
-        gpu_info = gr.Markdown(
-            value="*GPU: Chưa kiểm tra*",
-            visible=True
-        )
+    # GPU info
+    gpu_info = gr.HTML(
+        value=f'''
+        <div class="dm-status-bar">
+            <div class="dm-status-item">
+                {icon("gpu", 14, "#94a3b8")}
+                <span><strong>GPU:</strong> Chưa kiểm tra</span>
+            </div>
+        </div>
+        ''',
+        visible=True
+    )
 
-        # Log display
-        log_display = gr.Textbox(
-            label="📝 Log",
-            lines=20,
-            max_lines=30,
-            interactive=False,
-            show_copy_button=True
-        )
+    # Log display
+    log_display = gr.Textbox(
+        label="Log",
+        lines=20,
+        max_lines=30,
+        interactive=False,
+        show_copy_button=True,
+    )
 
     components = {
-        "phase_label": phase_label,
-        "progress_bar": progress_bar,
-        "progress_pct": progress_pct,
+        "phase_stepper": phase_stepper,
+        "progress_html": progress_html,
         "gpu_info": gpu_info,
         "log_display": log_display,
     }
@@ -68,7 +139,9 @@ def update_progress_state(
     current_phase: int,
     total_phases: int,
     phase_name: str,
-    phase_progress: float
+    phase_progress: float,
+    elapsed_seconds: int = 0,
+    estimated_seconds: int = 0
 ) -> Dict[str, Any]:
     """Update progress display state.
 
@@ -77,6 +150,8 @@ def update_progress_state(
         total_phases: Total phases to run
         phase_name: Name of current phase
         phase_progress: Progress within current phase (0-100)
+        elapsed_seconds: Elapsed time in seconds
+        estimated_seconds: Estimated remaining time in seconds
 
     Returns:
         Dict of updates for UI components
@@ -86,13 +161,30 @@ def update_progress_state(
     overall_progress = (completed_phases / total_phases) * 100 + (phase_progress / total_phases)
     overall_progress = min(100, max(0, overall_progress))
 
-    phase_text = f"**Phase {current_phase}/{total_phases}:** {phase_name}"
-    pct_text = f"{overall_progress:.0f}%"
+    # Format times
+    def fmt_time(seconds: int) -> str:
+        if seconds < 60:
+            return f"{seconds}s"
+        mins = seconds // 60
+        secs = seconds % 60
+        if mins < 60:
+            return f"{mins}:{secs:02d}"
+        hours = mins // 60
+        mins = mins % 60
+        return f"{hours}:{mins:02d}:{secs:02d}"
+
+    elapsed_str = fmt_time(elapsed_seconds)
+    estimate_str = fmt_time(estimated_seconds) if estimated_seconds > 0 else "--:--"
 
     return {
-        "phase_label": phase_text,
-        "progress_bar": overall_progress,
-        "progress_pct": pct_text,
+        "phase_stepper": create_phase_stepper_html(current_phase - 1),
+        "progress_html": create_progress_html(
+            f"Phase {current_phase}/{total_phases}: {phase_name}",
+            overall_progress,
+            phase_progress,
+            elapsed_str,
+            estimate_str
+        ),
     }
 
 
@@ -124,7 +216,7 @@ def format_log_line(line: str) -> str:
         line: Raw log line
 
     Returns:
-        Formatted line with ANSI color codes (for display)
+        Formatted line with prefixes
     """
     line = line.strip()
 
@@ -133,12 +225,14 @@ def format_log_line(line: str) -> str:
 
     # Add prefixes based on content
     if any(x in line.upper() for x in ['ERROR', 'FAILED', 'CRITICAL']):
-        line = f"❌ {line}"
+        line = f"[ERR] {line}"
     elif any(x in line.upper() for x in ['WARNING', 'WARN']):
-        line = f"⚠️ {line}"
+        line = f"[WRN] {line}"
     elif any(x in line.upper() for x in ['SUCCESS', 'COMPLETED', 'DONE']):
-        line = f"✅ {line}"
+        line = f"[OK]  {line}"
     elif any(x in line.upper() for x in ['CHECKPOINT', 'SAVED']):
-        line = f"💾 {line}"
+        line = f"[CHK] {line}"
+    elif any(x in line.upper() for x in ['INFO', 'LOG']):
+        line = f"[INF] {line}"
 
     return line

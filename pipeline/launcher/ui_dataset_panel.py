@@ -13,6 +13,7 @@ except ImportError:
     HAS_TKINTER = False
 
 from .config_preset_manager import ConfigPresetManager, PresetInfo
+from .ui_icons import icon, get_ui_icon, get_button_label
 
 
 def browse_folder() -> str:
@@ -68,18 +69,18 @@ def create_dataset_panel(
         # Dataset folder
         with gr.Row():
             dataset_path = gr.Textbox(
-                label="📁 Thư mục Dataset",
+                label="Thư mục Dataset",
                 placeholder="Chọn thư mục chứa ảnh X-ray gốc...",
                 scale=4
             )
-            browse_btn = gr.Button("📂 Chọn", scale=1, variant="secondary")
+            browse_btn = gr.Button(get_button_label("browse"), scale=1, variant="secondary")
 
         # Preset selection
         with gr.Row():
             preset_dropdown = gr.Dropdown(
                 choices=preset_choices,
                 value=default_preset,
-                label="⚙️ Preset",
+                label="Preset",
                 scale=3
             )
             estimate_text = gr.Markdown(
@@ -89,7 +90,7 @@ def create_dataset_panel(
 
         # Expert mode toggle
         expert_checkbox = gr.Checkbox(
-            label="🔧 Chế độ Expert (tinh chỉnh tham số)",
+            label="Chế độ Expert (tinh chỉnh tham số)",
             value=False
         )
 
@@ -134,7 +135,7 @@ def create_dataset_panel(
 
     # Phase selection
     with gr.Group():
-        gr.Markdown("### 📋 Các Phase chạy")
+        gr.Markdown(f'{icon("layers", 16, "#10b981")} **Các Phase chạy**')
 
         with gr.Row():
             phase6_check = gr.Checkbox(label="Phase 6: Tạo ảnh", value=True)
@@ -148,14 +149,14 @@ def create_dataset_panel(
         with gr.Group(visible=False) as phase9_group:
             with gr.Row():
                 real_yolo_dir = gr.Textbox(
-                    label="📁 Đường dẫn Dataset YOLO thực",
+                    label="Đường dẫn Dataset YOLO thực",
                     placeholder="Đường dẫn đến dataset thực (YOLO format)..."
                 )
-                browse_real_btn = gr.Button("📂 Chọn", variant="secondary")
+                browse_real_btn = gr.Button(get_button_label("browse"), variant="secondary")
 
     # Checkpoint resume
     with gr.Group():
-        gr.Markdown("### 💾 Checkpoint")
+        gr.Markdown(f'{icon("save", 16, "#10b981")} **Checkpoint**')
         
         resume_info = gr.Markdown(
             value="*Không có checkpoint nào được tìm thấy*",

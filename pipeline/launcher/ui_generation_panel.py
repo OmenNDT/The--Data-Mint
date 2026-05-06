@@ -16,22 +16,37 @@ from .generation_config_utils import (
 )
 from .generation_process_manager import run_generation, cancel_generation
 from .launcher_utils import check_comfyui_connection
+from .ui_icons import icon, get_ui_icon, get_button_label
 
 logger = logging.getLogger(__name__)
 
 
 def _check_comfyui_status() -> str:
-    """Check ComfyUI connection and return status markdown."""
+    """Check ComfyUI connection and return status HTML."""
     ok, msg = check_comfyui_connection()
     if ok:
-        return "### ✅ ComfyUI: Đã kết nối"
-    return f"### ⚠️ ComfyUI: Chưa kết nối — {msg or 'Kiểm tra server đang chạy'}"
+        return f'''
+        <div class="dm-status-bar">
+            <div class="dm-status-item">
+                <div class="dm-status-indicator"></div>
+                <span><strong>ComfyUI:</strong> Đã kết nối</span>
+            </div>
+        </div>
+        '''
+    return f'''
+    <div class="dm-status-bar">
+        <div class="dm-status-item">
+            <div class="dm-status-indicator offline"></div>
+            <span><strong>ComfyUI:</strong> Chưa kết nối — {msg or 'Kiểm tra server đang chạy'}</span>
+        </div>
+    </div>
+    '''
 
 
 def _create_prompt_section(templates: dict) -> dict:
     """Create per-defect prompt accordion. Returns component dict."""
     components = {}
-    with gr.Accordion("📝 Prompts (chỉnh sửa)", open=False):
+    with gr.Accordion(f'{icon("file_text", 14, "#94a3b8")} Prompts (chỉnh sửa)', open=False):
         for defect in DEFECT_TYPES:
             tpl = templates.get(defect, {})
             with gr.Group():
@@ -63,7 +78,7 @@ def _create_prompt_section(templates: dict) -> dict:
 def _create_sampler_section(sampler_cfg: dict) -> dict:
     """Create sampler parameters accordion."""
     components = {}
-    with gr.Accordion("⚙️ Sampler", open=False):
+    with gr.Accordion(f'{icon("sliders", 14, "#94a3b8")} Sampler', open=False):
         with gr.Row():
             components["sampler_name"] = gr.Dropdown(
                 choices=["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_sde", "ddim", "uni_pc"],
@@ -105,13 +120,14 @@ def create_generation_tab():
     dist = gen_cfg.get("defect_distribution", {d: 0.2 for d in DEFECT_TYPES})
 
     # --- ComfyUI status ---
-    with gr.Group():
-        comfyui_status_md = gr.Markdown("### ⏳ Đang kiểm tra ComfyUI...")
-        refresh_btn = gr.Button("🔄 Kiểm tra lại", size="sm")
+    with gr.Column(elem_classes=["dm-card"]):
+        comfyui_status_md = gr.HTML("<div class='dm-status-bar'><div class='dm-status-item'><div class='dm-status-indicator offline'></div><span><strong>ComfyUI:</strong> Đang kiểm tra...</span></div></div>")
+        refresh_btn = gr.Button(get_button_label("refresh"), size="sm", variant="secondary")
+    
 
     # --- Models ---
-    with gr.Group():
-        gr.Markdown("### 📁 Models")
+    with gr.Column(elem_classes=["dm-card"]):
+        gr.HTML(f'<div class="dm-card-header">{icon("cpu", 18, "#10b981")} Models</div>')
         checkpoint_choices = scan_checkpoints()
         gr.Dropdown(
             choices=checkpoint_choices,
@@ -133,32 +149,34 @@ def create_generation_tab():
             label="LoRA models (chọn để sử dụng)",
             interactive=True,
         )
+    
 
     # --- Defect config ---
-    with gr.Group():
-        gr.Markdown("### 🎯 Cấu hình Defect")
+    with gr.Column(elem_classes=["dm-card"]):
+        gr.HTML(f'<div class="dm-card-header">{icon("target", 18, "#10b981")} Cấu hình Defect</div>')
         total_images_input = gr.Number(
             value=gen_cfg.get("total_images", 100),
             label="Tổng số ảnh", minimum=1, interactive=True,
         )
         gr.Markdown("*Phân bổ % (tổng nên = 100%):*")
         dist_sliders = {}
-        with gr.Row():
-            for defect in DEFECT_TYPES:
-                pct = round(dist.get(defect, 0.2) * 100)
-                dist_sliders[defect] = gr.Slider(
-                    0, 100, value=pct, step=5,
-                    label=defect.replace("_", " ").title(),
-                    interactive=True,
-                )
+    with gr.Row():
+        for defect in DEFECT_TYPES:
+            pct = round(dist.get(defect, 0.2) * 100)
+            dist_sliders[defect] = gr.Slider(
+                0, 100, value=pct, step=5,
+                label=defect.replace("_", " ").title(),
+                interactive=True,
+            )
+    
 
     # --- Prompts & Sampler ---
     _create_prompt_section(templates)
     sampler_components = _create_sampler_section(sampler_cfg)
 
     # --- Paths ---
-    with gr.Group():
-        gr.Markdown("### 📂 Đường dẫn")
+    with gr.Column(elem_classes=["dm-card"]):
+        gr.HTML(f'<div class="dm-card-header">{icon("folder_open", 18, "#10b981")} Đường dẫn</div>')
         bg_dir_input = gr.Textbox(
             value=paths_cfg.get("backgrounds_dir", ""),
             label="Thư mục ảnh nền (background)", interactive=True,
@@ -168,22 +186,24 @@ def create_generation_tab():
             label="Thư mục output", interactive=True,
         )
         pilot_checkbox = gr.Checkbox(
-            label="🧪 Pilot mode (5 ảnh test nhanh)", value=False,
+            label="Pilot mode (5 ảnh test nhanh)", value=False,
             interactive=True,
         )
+    
 
     # --- Buttons ---
     with gr.Row():
-        run_btn = gr.Button("🚀 Bắt đầu tạo ảnh", variant="primary", size="lg")
-        cancel_btn = gr.Button("⏹️ Hủy", variant="stop", size="lg", visible=False)
+        run_btn = gr.Button(get_button_label("run_pipeline"), variant="primary", size="lg", elem_classes=["dm-btn-primary"])
+        cancel_btn = gr.Button(get_button_label("cancel"), variant="stop", size="lg", visible=False, elem_classes=["dm-btn-danger"])
 
     # --- Progress (read-only) ---
-    with gr.Group():
-        gr.Markdown("### 📝 Tiến trình")
-        with gr.Row():
-            gen_progress = gr.Slider(0, 100, 0, label="Tiến trình", interactive=False, scale=4)
-            gen_pct = gr.Textbox("0%", scale=1, interactive=False)
-        gen_log = gr.Textbox(label="Log", lines=20, interactive=False)
+    with gr.Column(elem_classes=["dm-progress-container"]):
+        gr.HTML(f'<div class="dm-card-header">{icon("activity", 18, "#10b981")} Tiến trình</div>')
+    with gr.Row():
+        gen_progress = gr.Slider(0, 100, 0, label="Tiến trình", interactive=False, scale=4)
+        gen_pct = gr.Textbox("0%", scale=1, interactive=False)
+    gen_log = gr.Textbox(label="Log", lines=20, interactive=False)
+    
 
     # --- Events ---
     refresh_btn.click(fn=_check_comfyui_status, outputs=[comfyui_status_md])
