@@ -4,53 +4,117 @@
 defect_prompts:
   crack:
     lora_name: "xray_crack_lora_r32.safetensors"
-    positive: "xray_crack, weld crack defect, radiographic image, high contrast, sharp edges, linear discontinuity"
-    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, round shapes"
-    lora_strength: 0.7
-    controlnet_strength: 0.8
-    denoise: 0.85
+    positive: "xray_crack, weld crack defect, radiographic image, high contrast, sharp edges, linear discontinuity, prominent dark line, visible crack pattern"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, round shapes, clean weld, no defect"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
 
   porosity:
     lora_name: "xray_porosity_lora_r32.safetensors"
     positive: "xray_porosity, weld porosity defect, radiographic image, scattered dark spots, gas pockets, spherical voids"
     negative: "color, photograph, blurry, text, watermark, low quality, rgb, linear defects, cracks"
-    lora_strength: 0.7
-    controlnet_strength: 0.8
-    denoise: 0.80
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
 
   inclusion:
     lora_name: "xray_inclusion_lora_r32.safetensors"
     positive: "xray_inclusion, slag inclusion defect, radiographic image, irregular dark region, non-metallic particles, trapped material"
     negative: "color, photograph, blurry, text, watermark, low quality, rgb, regular patterns, uniform shapes"
-    lora_strength: 0.7
-    controlnet_strength: 0.8
-    denoise: 0.82
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
 
   lack_of_fusion:
     lora_name: "xray_lof_lora_r32.safetensors"
     positive: "xray_lof, lack of fusion defect, radiographic image, linear indication, unbonded region, weld interface separation"
     negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, porosity"
-    lora_strength: 0.7
-    controlnet_strength: 0.8
-    denoise: 0.85
+    lora_strength: 0.8
+    controlnet_strength: 0.85
+    denoise: 0.90
 
   undercut:
     lora_name: "xray_undercut_lora_r32.safetensors"
     positive: "xray_undercut, weld undercut defect, radiographic image, groove along weld toe, material reduction, edge discontinuity"
     negative: "color, photograph, blurry, text, watermark, low quality, rgb, internal defects, porosity"
-    lora_strength: 0.7
-    controlnet_strength: 0.8
-    denoise: 0.83
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  lack_of_penetration:
+    lora_name: "xray_lack_of_penetration_lora_r32.safetensors"
+    positive: "xray_lack_of_penetration, incomplete penetration defect, radiographic image, narrow dark linear band along weld centerline, incomplete root fusion, weld root gap"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, porosity, surface defects"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  lack_of_side_wall_fusion:
+    lora_name: "xray_loswf_lora_r32.safetensors"
+    positive: "xray_loswf, lack of side wall fusion defect, radiographic image, elongated dark linear indication along groove side wall, unbonded bevel face, incomplete fusion at weld sidewall"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, porosity, centerline defect"
+    lora_strength: 0.8
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  clustered_porosity:
+    lora_name: "xray_clustered_porosity_lora_r32.safetensors"
+    positive: "xray_clustered_porosity, clustered gas pores, radiographic image, group of dark circular spots, localized porosity cluster, multiple spherical voids in concentrated area"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, linear defects, single pore, uniform distribution"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  slag_inclusion:
+    lora_name: "xray_slag_inclusion_lora_r32.safetensors"
+    positive: "xray_slag_inclusion, slag inclusion defect, radiographic image, irregular elongated dark region, trapped slag, non-metallic oxide inclusion, weld bead"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, round shapes, porosity, cracks"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  linear_porosity:
+    lora_name: "xray_linear_porosity_lora_r32.safetensors"
+    positive: "xray_linear_porosity, linear porosity defect, radiographic image, row of dark spots aligned along weld axis, chain of gas pores, linear arrangement of voids"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, clustered distribution, single pore, random scatter"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  elongated_cavity:
+    lora_name: "xray_elongated_cavity_lora_r32.safetensors"
+    positive: "xray_elongated_cavity, elongated void defect, radiographic image, wormhole porosity, elongated dark cavity, pipe-shaped void, weld discontinuity"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, spherical pore, linear crack, surface defect"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  metallic_inclusion:
+    lora_name: "xray_metallic_inclusion_lora_r32.safetensors"
+    positive: "xray_metallic_inclusion, metallic inclusion defect, radiographic image, bright dense spot, tungsten inclusion, high density foreign particle, white spot in weld"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, dark region, porosity, slag"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  linear_slag_inclusion:
+    lora_name: "xray_linear_slag_inclusion_lora_r32.safetensors"
+    positive: "xray_linear_slag_inclusion, linear slag inclusion, radiographic image, elongated dark linear region aligned with weld direction, inter-run slag, continuous slag line"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, round shapes, porosity, isolated inclusion"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
 
 # Sampler configuration (shared across all defect types)
 sampler_config:
   sampler_name: "euler"
   scheduler: "normal"
   steps: 20
-  cfg: 7.0
+  cfg: 8.5
 
 # Model paths (relative to ComfyUI models directory)
 model_paths:
-  checkpoint: "checkpoints/sd-v1-5-pruned-emaonly.safetensors"
+  checkpoint: "sd-v1-5-pruned-emaonly.safetensors"
   controlnet: "controlnet/control_v11p_sd15_inpaint.pth"
   lora_dir: "loras/"
