@@ -1,47 +1,34 @@
 """UI Dataset Panel - Dataset selection + config components."""
 
 import gradio as gr
-import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-
-try:
-    import tkinter as tk
-    from tkinter import filedialog
-    HAS_TKINTER = True
-except ImportError:
-    HAS_TKINTER = False
 
 from .config_preset_manager import ConfigPresetManager, PresetInfo
 from .ui_icons import icon, get_ui_icon, get_button_label
 
+# Root that the in-browser folder browser (gr.FileExplorer) is allowed to walk.
+# tkinter native dialogs do NOT work in a web app (they open on the SERVER
+# machine, not the user's browser), so we use an in-browser tree instead.
+BROWSE_ROOT = str(Path.home())
 
-def browse_folder() -> str:
-    """Open native folder dialog and return selected path."""
-    if not HAS_TKINTER:
+
+def show_browser():
+    """Reveal the in-browser folder tree when the 'Chọn' button is clicked."""
+    return gr.update(visible=True)
+
+
+def picked_to_path(picked) -> str:
+    """Convert a gr.FileExplorer selection into a folder path string.
+
+    FileExplorer returns a file/dir path (or list). If a file is picked, use its
+    parent directory so the user always ends up with a folder.
+    """
+    if not picked:
         return ""
-
-    def _browse():
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-
-        folder_selected = filedialog.askdirectory(title="Chọn thư mục dataset")
-
-        root.destroy()
-        return folder_selected
-
-    # Run in thread to avoid blocking
-    result = [None]
-
-    def thread_func():
-        result[0] = _browse()
-
-    t = threading.Thread(target=thread_func)
-    t.start()
-    t.join()
-
-    return result[0] or ""
+    path = picked[0] if isinstance(picked, (list, tuple)) else picked
+    p = Path(path)
+    return str(p if p.is_dir() else p.parent)
 
 
 def create_dataset_panel(
@@ -74,6 +61,15 @@ def create_dataset_panel(
                 scale=4
             )
             browse_btn = gr.Button(get_button_label("browse"), scale=1, variant="secondary")
+
+        # In-browser folder tree (hidden until "Chọn" is clicked).
+        # Replaces the old tkinter native dialog which cannot work in a web UI.
+        dataset_explorer = gr.FileExplorer(
+            label="Chọn thư mục dataset (bấm để chọn, hoặc gõ tay ở ô trên)",
+            root_dir=BROWSE_ROOT,
+            file_count="single",
+            visible=False,
+        )
 
         # Preset selection
         with gr.Row():
@@ -154,6 +150,13 @@ def create_dataset_panel(
                 )
                 browse_real_btn = gr.Button(get_button_label("browse"), variant="secondary")
 
+            real_yolo_explorer = gr.FileExplorer(
+                label="Chọn thư mục dataset YOLO thực",
+                root_dir=BROWSE_ROOT,
+                file_count="single",
+                visible=False,
+            )
+
     # Checkpoint resume
     with gr.Group():
         gr.Markdown(f'{icon("save", 16, "#10b981")} **Checkpoint**')
@@ -171,6 +174,7 @@ def create_dataset_panel(
     components = {
         "dataset_path": dataset_path,
         "browse_btn": browse_btn,
+        "dataset_explorer": dataset_explorer,
         "preset_dropdown": preset_dropdown,
         "estimate_text": estimate_text,
         "expert_checkbox": expert_checkbox,
@@ -187,6 +191,7 @@ def create_dataset_panel(
         "phase9_group": phase9_group,
         "real_yolo_dir": real_yolo_dir,
         "browse_real_btn": browse_real_btn,
+        "real_yolo_explorer": real_yolo_explorer,
         "resume_info": resume_info,
         "resume_checkbox": resume_checkbox,
         "presets": presets,

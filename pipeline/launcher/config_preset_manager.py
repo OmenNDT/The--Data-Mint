@@ -79,6 +79,22 @@ class ConfigPresetManager:
         with open(path, 'w', encoding='utf-8') as f:
             yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
 
+    def write_effective_config(self, config: Dict[str, Any]) -> str:
+        """Write a fully-merged config (base + preset + UI overrides) to a temp
+        YAML file and return its path.
+
+        Phase 6 (batch-production-main.py) only reads `--config <file>`, so any
+        UI choice such as the dataset/backgrounds folder must be baked into an
+        actual YAML file. Without this the pipeline silently falls back to the
+        default batch-config.yaml and ignores everything picked in the UI.
+        """
+        out_dir = self.base_config_path.parent / "_generated"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "effective-run-config.yaml"
+        self._save_yaml(out_path, config)
+        logger.info(f"Wrote effective run config: {out_path}")
+        return str(out_path)
+
     def list_presets(self) -> List[PresetInfo]:
         """List all available presets.
 

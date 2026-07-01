@@ -31,7 +31,8 @@ from .launcher_utils import (
     resolve_pipeline_path
 )
 from .ui_dataset_panel import (
-    browse_folder,
+    show_browser,
+    picked_to_path,
     create_dataset_panel,
     update_estimate,
     get_phases_to_run
@@ -92,6 +93,24 @@ class PipelineLauncherApp:
         preset_choices = [(p.name, p.file_path.stem) for p in presets]
         preset_stems = [p.file_path.stem for p in presets]
         default_preset = "pilot" if "pilot" in preset_stems else (preset_stems[0] if preset_stems else "pilot")
+
+        # Defect types come from the base config's defect_distribution. The user
+        # picks WHICH defects to generate; the clean background folder is fixed
+        # in config and shown read-only (not user-selectable).
+        base_cfg = self.preset_manager._load_yaml(self.preset_manager.base_config_path)
+        all_defect_types = list(base_cfg.get("generation", {}).get("defect_distribution", {}).keys())
+        fixed_backgrounds_dir = base_cfg.get("paths", {}).get("backgrounds_dir", "")
+
+        # A defect can only be generated if its LoRA exists on disk. Used to warn
+        # the user if they pick a defect whose LoRA is not trained yet (e.g. LOSWF).
+        lora_models = base_cfg.get("lora_models", {})
+        loras_dir = resolve_pipeline_path(".").parent / "comfyui" / "models" / "loras"
+        ready_defects = [
+            d for d in all_defect_types
+            if (loras_dir / lora_models.get(d, "")).exists()
+        ]
+        # Default: nothing selected — the user must explicitly pick defects to generate.
+        default_defects = []
 
         # Check GPU and ComfyUI on startup (skip in demo mode)
         if DEMO_MODE:
@@ -156,16 +175,23 @@ class PipelineLauncherApp:
             gr.HTML(status_html)
 
             with gr.Tab(get_tab_label("tab_setup")):
-                # Dataset selection
+                # Defect type selection — the user picks WHICH defects to generate.
                 with gr.Column(elem_classes=["dm-card"]):
-                    gr.HTML(f'<div class="dm-card-header">{icon("folder", 18, "#10b981")} Dataset</div>')
-                    with gr.Row():
-                        dataset_path = gr.Textbox(
-                            label="Thư mục Dataset",
-                            placeholder="Chọn thư mục chứa ảnh X-ray gốc...",
-                            scale=4
-                        )
-                        browse_btn = gr.Button(get_button_label("browse"), scale=1, variant="secondary")
+                    gr.HTML(f'<div class="dm-card-header">{icon("layers", 18, "#10b981")} Loại khuyết tật cần sinh</div>')
+                    defect_types = gr.CheckboxGroup(
+                        choices=all_defect_types,
+                        value=default_defects,
+                        label="Chọn loại khuyết tật (tỉ lệ chia đều cho các loại đã chọn)",
+                    )
+
+                # Clean background folder is fixed in config — shown read-only.
+                with gr.Column(elem_classes=["dm-card"]):
+                    gr.HTML(f'<div class="dm-card-header">{icon("folder", 18, "#10b981")} Ảnh nền sạch (cố định)</div>')
+                    dataset_path = gr.Textbox(
+                        label="Thư mục ảnh nền sạch (background patches) — cấu hình sẵn",
+                        value=fixed_backgrounds_dir,
+                        interactive=False,
+                    )
 
                 # Preset selection
                 with gr.Column(elem_classes=["dm-card"]):
@@ -213,6 +239,13 @@ class PipelineLauncherApp:
                         real_yolo_dir = gr.Textbox(
                             label="Dataset YOLO thực",
                             placeholder="Đường dẫn đến dataset thực (YOLO format)..."
+                        )
+                        browse_real_btn = gr.Button(get_button_label("browse"), variant="secondary")
+                        real_yolo_explorer = gr.FileExplorer(
+                            label="Vào thư mục dataset YOLO rồi chọn 1 file bất kỳ (hệ thống lấy thư mục chứa nó). Hoặc gõ tay ở ô trên.",
+                            root_dir=str(Path.home()),
+                            file_count="single",
+                            visible=False,
                         )
 
                 # Checkpoint
@@ -304,11 +337,16 @@ class PipelineLauncherApp:
             with gr.Tab(get_tab_label("tab_labeling")):
                 create_auto_label_tab()
 
-            # Event handlers
-            browse_fn = (lambda: "./dataset/demo") if DEMO_MODE else browse_folder
-            browse_btn.click(
-                fn=browse_fn,
-                outputs=[dataset_path]
+            # Event handlers — Phase 9 real dataset folder still uses the
+            # in-browser tree (an actual user-chosen path, unlike backgrounds).
+            browse_real_btn.click(
+                fn=show_browser,
+                outputs=[real_yolo_explorer],
+            )
+            real_yolo_explorer.change(
+                fn=picked_to_path,
+                inputs=[real_yolo_explorer],
+                outputs=[real_yolo_dir],
             )
 
             preset_dropdown.change(
@@ -333,7 +371,7 @@ class PipelineLauncherApp:
             run_btn.click(
                 fn=self.start_pipeline,
                 inputs=[
-                    dataset_path,
+                    defect_types,
                     preset_dropdown,
                     expert_checkbox,
                     total_images,
@@ -386,7 +424,7 @@ class PipelineLauncherApp:
 
     def start_pipeline(
         self,
-        dataset_path: str,
+        defect_types: List[str],
         preset_name: str,
         expert_mode: bool,
         total_images: int,
@@ -407,15 +445,16 @@ class PipelineLauncherApp:
         self.is_running = True
         log_lines = []
 
-        # Validation
-        if not dataset_path:
+        # Validation — at least one defect type must be selected (the pipeline
+        # paints these defect shapes onto the fixed clean backgrounds).
+        if not defect_types:
             yield (
                 gr.update(visible=True),
                 gr.update(visible=False),
-                "❌ Lỗi: Vui lòng chọn thư mục dataset",
+                "❌ Lỗi: Vui lòng chọn ít nhất 1 loại khuyết tật",
                 0, "0%",
-                "Vui lòng chọn thư mục dataset",
-                "*Lỗi: Chưa chọn dataset*", "---", "---", [], []
+                "Vui lòng chọn ít nhất 1 loại khuyết tật",
+                "*Lỗi: chưa chọn khuyết tật*", "---", "---", [], []
             )
             return
 
@@ -469,9 +508,23 @@ class PipelineLauncherApp:
             )
             return
 
+        # Inject the chosen defect types as an even distribution. Backgrounds are
+        # fixed in config (not user-selectable); the user only picks WHICH defects
+        # get painted onto them. BatchJobScheduler reads defect_distribution to
+        # build the job list.
+        even = round(1.0 / len(defect_types), 4)
+        config.setdefault("generation", {})["defect_distribution"] = {
+            d: even for d in defect_types
+        }
+
+        # Bake the fully-merged config (base + preset + overrides + defect list)
+        # into a temp YAML and point Phase 6 at it. Otherwise the run silently
+        # falls back to the default batch-config.yaml and ignores the UI.
+        if not DEMO_MODE:
+            config["config_path"] = self.preset_manager.write_effective_config(config)
+
         # Convert to PipelineConfig
         pipeline_config = self.preset_manager.config_to_pipeline_config(config)
-        pipeline_config.dataset_path = dataset_path
         pipeline_config.phases_to_run = phases
 
         if phase9 and real_yolo_dir:
@@ -479,6 +532,7 @@ class PipelineLauncherApp:
 
         log_lines.append(f"🚀 Bắt đầu pipeline với preset: {preset_name}")
         log_lines.append(f"📋 Các phase: {phases}")
+        log_lines.append(f"🐞 Khuyết tật: {', '.join(defect_types)}")
         log_lines.append(f"🖼️ Số ảnh: {pipeline_config.total_images}")
 
         # Create orchestrator (mock in demo mode)
