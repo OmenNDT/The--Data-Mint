@@ -1,0 +1,19 @@
+# Standard Preset - Medium scale run
+# 5,000 images, standard validation
+# Estimated time: ~4 hours
+
+name: "Standard"
+description: "Chạy trung bình - 5,000 ảnh, kiểm tra đầy đủ"
+
+generation:
+  total_images: 5000
+
+validation:
+  epochs: 50
+  model_size: "s"
+  batch_size: 16
+  ratios: [0.0, 0.1, 0.2, 0.3, 0.5, 1.0]
+
+phases_to_run: [6, 7, 8]
+
+estimated_minutes: 240

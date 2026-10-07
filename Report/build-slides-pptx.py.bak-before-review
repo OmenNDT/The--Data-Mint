@@ -1,0 +1,712 @@
+# -*- coding: utf-8 -*-
+"""Sinh slide trinh chieu do an The Data Mint tu form mau cua UIT.
+
+Giu nguyen slide master, layout, mau sac, chan trang cua tep
+"5. Mau Slide bao cao.pptx"; chi thay noi dung.
+"""
+from pathlib import Path
+import copy
+
+from pptx import Presentation
+from pptx.opc.packuri import PackURI
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from PIL import Image
+
+BASE = Path(__file__).resolve().parent
+TEMPLATE = BASE / "5. Mẫu Slide báo cáo.pptx"
+OUTPUT = BASE / "Slide-bao-cao-The-Data-Mint.pptx"
+FIG = BASE / "figures"
+
+# Bang mau lay tu theme cua form mau
+NAVY = RGBColor(0x1C, 0x30, 0x5E)      # dk2
+BLUE = RGBColor(0x00, 0x71, 0xFF)      # accent1
+INK = RGBColor(0x2A, 0x2F, 0x4F)       # dk1
+ROW_ALT = RGBColor(0xED, 0xF1, 0xF7)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+L_TITLE, L_TOC, L_OBJECT, L_BLANK, L_PICTURE = 0, 1, 2, 3, 10
+
+TITLE_BOX = (Inches(0.85), Inches(0.24), Inches(11.57), Inches(0.95))
+BODY_BOX = (Inches(0.85), Inches(1.32), Inches(11.57), Inches(5.45))
+
+
+# --------------------------------------------------------------------------
+# Tien ich thao tac tren cau truc slide
+# --------------------------------------------------------------------------
+def drop_slides(prs, indexes):
+    """Xoa cac slide theo chi so, giu nguyen quan he tep khac."""
+    id_list = prs.slides._sldIdLst
+    entries = list(id_list)
+    for i in sorted(indexes, reverse=True):
+        rid = entries[i].rId
+        prs.part.drop_rel(rid)
+        id_list.remove(entries[i])
+
+
+def renumber_slide_parts(prs):
+    """Danh so lai partname cac slide con giu, tranh trung ten khi them slide moi."""
+    for i, slide in enumerate(prs.slides, start=1):
+        slide.part.partname = PackURI("/ppt/slides/slide%d.xml" % i)
+
+
+def move_slide_to_end(prs, index):
+    id_list = prs.slides._sldIdLst
+    entry = list(id_list)[index]
+    id_list.remove(entry)
+    id_list.append(entry)
+
+
+def add_slide(prs, layout_index):
+    return prs.slides.add_slide(prs.slide_masters[0].slide_layouts[layout_index])
+
+
+def remove_placeholder(slide, idx):
+    for shape in list(slide.placeholders):
+        if shape.placeholder_format.idx == idx:
+            shape._element.getparent().remove(shape._element)
+
+
+def fit_title_size(text, base):
+    """Chon co chu de tieu de vua mot dong trong be rong 11,2 inch."""
+    return max(20, min(base, int(1380 / max(len(text), 1))))
+
+
+def estimate_text_height(items, sizes, width_in=10.45):
+    """Uoc chieu cao khoi gach dau dong, don vi inch."""
+    total = 0.0
+    for level, content in items:
+        text = content.replace("**", "")
+        size = sizes[min(level, len(sizes) - 1)]
+        usable = width_in - 0.45 * level
+        chars_per_line = max(20, int(usable * 72 / (size * 0.535)))
+        lines = max(1, -(-len(text) // chars_per_line))
+        total += lines * size * 1.42 / 72 + 0.10
+    return total
+
+
+def set_title(slide, text, size=30):
+    size = fit_title_size(text, size)
+    ph = slide.placeholders[0]
+    left, top, width, height = TITLE_BOX
+    ph.left, ph.top, ph.width, ph.height = left, top, width, height
+    tf = ph.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = text
+    for run in p.runs:
+        run.font.size = Pt(size)
+        run.font.bold = True
+        run.font.color.rgb = NAVY
+        run.font.name = "Arial"
+
+
+def fill_bullets(text_frame, items, sizes=(19, 16, 14)):
+    """items: danh sach (level, noi_dung). Noi dung dung '**' de in dam."""
+    text_frame.word_wrap = True
+    first = True
+    for level, content in items:
+        p = text_frame.paragraphs[0] if first else text_frame.add_paragraph()
+        first = False
+        p.level = level
+        p.alignment = PP_ALIGN.LEFT
+        p.space_after = Pt(6)
+        for chunk_index, chunk in enumerate(content.split("**")):
+            if not chunk:
+                continue
+            run = p.add_run()
+            run.text = chunk
+            run.font.size = Pt(sizes[min(level, len(sizes) - 1)])
+            run.font.name = "Arial"
+            bold = chunk_index % 2 == 1
+            run.font.bold = bold
+            run.font.color.rgb = BLUE if bold else INK
+
+
+def text_slide(prs, title, items, title_size=30, sizes=(19, 16, 14)):
+    slide = add_slide(prs, L_OBJECT)
+    set_title(slide, title, title_size)
+    body = slide.placeholders[1]
+    body.left, body.top, body.width, body.height = BODY_BOX
+    fill_bullets(body.text_frame, items, sizes)
+    return slide
+
+
+def add_caption(slide, text, left, top, width):
+    box = slide.shapes.add_textbox(left, top, width, Inches(0.3))
+    tf = box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    run = p.add_run()
+    run.text = text
+    run.font.size = Pt(12)
+    run.font.italic = True
+    run.font.name = "Arial"
+    run.font.color.rgb = INK
+
+
+def place_image(slide, filename, left, top, max_w, max_h):
+    """Dat anh vao khung, giu ty le, can giua khung."""
+    with Image.open(FIG / filename) as im:
+        ratio = im.size[0] / im.size[1]
+    width = max_w
+    height = int(width / ratio)
+    if height > max_h:
+        height = max_h
+        width = int(height * ratio)
+    x = left + int((max_w - width) / 2)
+    y = top + int((max_h - height) / 2)
+    return slide.shapes.add_picture(str(FIG / filename), x, y, width, height)
+
+
+def image_text_slide(prs, title, items, figure, caption, text_height=None,
+                     title_size=30, sizes=(16, 14, 13)):
+    """Slide tieu de tren, gach dau dong giua, anh ngang ben duoi."""
+    slide = add_slide(prs, L_OBJECT)
+    set_title(slide, title, title_size)
+    if text_height is None:
+        text_height = estimate_text_height(items, sizes) + 0.40
+    body = slide.placeholders[1]
+    body.left, body.top, body.width = Inches(0.85), Inches(1.28), Inches(11.57)
+    body.height = Inches(text_height)
+    fill_bullets(body.text_frame, items, sizes)
+
+    img_top = Inches(1.28 + text_height + 0.08)
+    img_h = Inches(7.5 - 0.62) - img_top - Inches(0.34)
+    pic = place_image(slide, figure, Inches(0.85), img_top, Inches(11.57), img_h)
+    add_caption(slide, caption, Inches(0.85), pic.top + pic.height + Inches(0.04),
+                Inches(11.57))
+    return slide
+
+
+def side_image_slide(prs, title, items, figure, caption, title_size=28,
+                     sizes=(17, 14, 13)):
+    """Slide tieu de va chu ben trai, anh doc ben phai."""
+    slide = add_slide(prs, L_OBJECT)
+    set_title(slide, title, title_size)
+    slide.placeholders[0].width = Inches(6.4)
+    body = slide.placeholders[1]
+    body.left, body.top, body.width, body.height = (
+        Inches(0.85), Inches(1.45), Inches(6.2), Inches(5.3))
+    fill_bullets(body.text_frame, items, sizes)
+
+    pic = place_image(slide, figure, Inches(7.4), Inches(0.5),
+                      Inches(5.0), Inches(6.0))
+    add_caption(slide, caption, Inches(7.2), pic.top + pic.height + Inches(0.06),
+                Inches(5.4))
+    return slide
+
+
+def table_slide(prs, title, headers, rows, col_widths, note=None,
+                title_size=30, font_size=13, header_size=13, top=1.35):
+    slide = add_slide(prs, L_OBJECT)
+    set_title(slide, title, title_size)
+    remove_placeholder(slide, 1)
+
+    total = sum(col_widths)
+    table_width = Inches(11.57)
+    n_rows, n_cols = len(rows) + 1, len(headers)
+    avail_h = Inches(6.55) - Inches(top) - (Inches(0.55) if note else Inches(0))
+    row_h = int(avail_h / n_rows)
+    shape = slide.shapes.add_table(n_rows, n_cols, Inches(0.85), Inches(top),
+                                   table_width, int(avail_h))
+    table = shape.table
+    for i, w in enumerate(col_widths):
+        table.columns[i].width = Emu(int(table_width * w / total))
+    for row in table.rows:
+        row.height = row_h
+
+    def write(cell, text, bold, color, fill, size, align):
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = fill
+        cell.margin_left = Inches(0.06)
+        cell.margin_right = Inches(0.06)
+        cell.margin_top = Inches(0.02)
+        cell.margin_bottom = Inches(0.02)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        tf = cell.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = align
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.name = "Arial"
+        run.font.color.rgb = color
+
+    for j, head in enumerate(headers):
+        write(table.cell(0, j), head, True, WHITE, NAVY, header_size,
+              PP_ALIGN.CENTER)
+    # Cot nao co o dai qua 16 ky tu thi can trai toan cot, con lai can giua
+    col_align = []
+    for j in range(n_cols):
+        longest = max(len(row[j].replace("**", "")) for row in rows)
+        col_align.append(PP_ALIGN.LEFT if longest > 16 else PP_ALIGN.CENTER)
+    for i, row in enumerate(rows):
+        fill = WHITE if i % 2 == 0 else ROW_ALT
+        for j, value in enumerate(row):
+            bold = value.startswith("**")
+            write(table.cell(i + 1, j), value.replace("**", ""), bold,
+                  BLUE if bold else INK, fill, font_size, col_align[j])
+
+    if note:
+        box = slide.shapes.add_textbox(Inches(0.85), Inches(6.62),
+                                       Inches(11.57), Inches(0.5))
+        tf = box.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        for index, chunk in enumerate(note.split("**")):
+            if not chunk:
+                continue
+            run = p.add_run()
+            run.text = chunk
+            run.font.size = Pt(13)
+            run.font.name = "Arial"
+            run.font.bold = index % 2 == 1
+            run.font.color.rgb = BLUE if index % 2 == 1 else INK
+    return slide
+
+
+# --------------------------------------------------------------------------
+# Noi dung slide
+# --------------------------------------------------------------------------
+def build_cover(prs):
+    slide = prs.slides[0]
+    ph = {s.placeholder_format.idx: s for s in slide.placeholders}
+    for run in ph[1].text_frame.paragraphs[0].runs:
+        run.text = ""
+    p = ph[1].text_frame.paragraphs[0]
+    p.runs[0].text = "ĐỒ ÁN MÔN HỌC"
+
+    tf = ph[2].text_frame
+    tf.word_wrap = True
+    tf.clear()
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    run = p.add_run()
+    run.text = ("NGHIÊN CỨU VÀ XÂY DỰNG HỆ THỐNG SINH ẢNH X-QUANG MỐI HÀN "
+                "TỔNG HỢP CÓ CHÚ THÍCH TỰ ĐỘNG")
+    run.font.size, run.font.bold, run.font.name = Pt(24), True, "Arial"
+    run.font.color.rgb = NAVY
+    p2 = tf.add_paragraph()
+    p2.alignment = PP_ALIGN.CENTER
+    run = p2.add_run()
+    run.text = "SỬ DỤNG STABLE DIFFUSION 1.5 VÀ LoRA"
+    run.font.size, run.font.bold, run.font.name = Pt(24), True, "Arial"
+    run.font.color.rgb = NAVY
+
+    for shape in slide.shapes:
+        if not shape.is_placeholder and shape.has_text_frame:
+            tf = shape.text_frame
+            tf.clear()
+            lines = [
+                ("GVHD: ThS. Phan Đình Duy", True, 18),
+                ("Trương Ngọc Sơn, 25210183", False, 17),
+                ("Trần Tín Nghĩa, 25210147", False, 17),
+                ("Hồ Thị Mỹ Phương, 25210170", False, 17),
+                ("Cử nhân ngành Trí tuệ nhân tạo, TP. Hồ Chí Minh, 2026",
+                 False, 15),
+            ]
+            for i, (text, bold, size) in enumerate(lines):
+                p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                p.alignment = PP_ALIGN.CENTER
+                run = p.add_run()
+                run.text = text
+                run.font.size, run.font.bold, run.font.name = Pt(size), bold, "Arial"
+                run.font.color.rgb = INK
+
+
+def build_content(prs):
+    # --- 3. Tong quan de tai -------------------------------------------
+    image_text_slide(
+        prs,
+        "1. TỔNG QUAN ĐỀ TÀI",
+        [
+            (0, "Chụp ảnh phóng xạ là phương pháp duy nhất cho hình ảnh trực tiếp khuyết tật nằm trong chiều dày mối hàn, được quy phạm coi là bằng chứng nghiệm thu."),
+            (0, "Đọc phim thủ công có ba hạn chế: năng suất thấp, kết quả giữa hai chuyên gia không thống nhất, chi phí nhân lực cao."),
+            (0, "Học sâu vướng thiếu dữ liệu: GDXray W0003 chỉ có **73 phim, 876 nhãn**; lẫn xỉ kim loại 23 mẫu, hốc kéo dài 28 mẫu."),
+            (0, "Hướng giải quyết: **sinh ảnh theo nhãn đã biết trước**, chú thích lấy ngay từ mặt nạ, loại bỏ khâu gán nhãn tay."),
+        ],
+        "fig-1-1-phim-that-w0003.png",
+        "Hình 1.1: Phim chụp phóng xạ mối hàn thật của bộ GDXray W0003, 4984 × 1240 px",
+    )
+
+    # --- 4. Muc tieu va pham vi ----------------------------------------
+    text_slide(
+        prs,
+        "1. MỤC TIÊU, ĐỐI TƯỢNG VÀ PHẠM VI",
+        [
+            (0, "**Mục tiêu tổng quát**: quy trình khép kín sinh ảnh X-quang mối hàn tổng hợp có chú thích tự động, chạy ở quy mô hàng chục nghìn ảnh trên một card đồ hoạ, chứng minh bằng đo đạc rằng dữ liệu sinh ra nâng được chất lượng mô hình phát hiện."),
+            (0, "**Chín mục tiêu cụ thể**"),
+            (1, "Tiền xử lý GDXray W0003 và RIAWELC; tinh chỉnh LoRA cho từng lớp khuyết tật."),
+            (1, "Sinh mặt nạ theo thủ tục cho 12 lớp, bám ISO 6520-1; inpainting có điều kiện trên ComfyUI."),
+            (1, "Bộ điều phối hàng loạt đạt tối thiểu 900 ảnh/giờ; xuất COCO và YOLO, chia tập 70/20/10."),
+            (1, "Cổng kiểm định chất lượng, giao diện một nút bấm, so sánh sáu mô hình nền, xác thực bằng YOLOv8."),
+            (0, "**Phạm vi**: 12 lớp khuyết tật, ảnh 512 × 512 thang xám 8 bit, một RTX 3090, nền Stable Diffusion 1.5 và năm biến thể."),
+            (0, "**Ngoài phạm vi**: thu thập phim mới, gán nhãn tay, huấn luyện ControlNet riêng, triển khai mô hình phát hiện vào sản xuất."),
+        ],
+    )
+
+    # --- 5. Co so ly thuyet 1 ------------------------------------------
+    text_slide(
+        prs,
+        "2. CƠ SỞ LÝ THUYẾT: STABLE DIFFUSION 1.5 VÀ LoRA",
+        [
+            (0, "**Khuếch tán tiềm ẩn**: bộ tự mã hoá biến phân nén ảnh 512 × 512 × 3 xuống bản đồ tiềm ẩn 64 × 64 × 4, giảm khoảng 48 lần số phần tử phải xử lý."),
+            (1, "U-Net khử nhiễu là nơi diễn ra quá trình sinh ảnh và cũng là nơi LoRA can thiệp."),
+            (1, "Bộ mã hoá CLIP đưa lời nhắc vào U-Net qua chú ý chéo."),
+            (1, "Đồ án dùng **25 bước, bộ lấy mẫu Euler, CFG 9,0**; Euler cho kết quả tất định khi cố định hạt giống."),
+            (0, "**LoRA**: thay vì cập nhật khoảng 860 triệu tham số U-Net, phân tích ma trận cập nhật thành tích hai ma trận hẹp hạng r, chỉ huấn luyện hai ma trận này."),
+            (1, "Đồ án dùng **r = 32, alpha = 16**, hệ số tỷ lệ 0,5."),
+            (1, "Mỗi mô hình khoảng **37 MB** so với 4 GB của mô hình nền; 12 lớp chỉ chiếm 444 MB."),
+            (1, "Chi phí huấn luyện khoảng **2,5 giờ mỗi lớp** trên RTX 3090."),
+        ],
+        sizes=(18, 15, 14),
+    )
+
+    # --- 6. Co so ly thuyet 2 ------------------------------------------
+    text_slide(
+        prs,
+        "2. CƠ SỞ LÝ THUYẾT: INPAINTING, CONTROLNET, CHỈ SỐ ĐÁNH GIÁ",
+        [
+            (0, "**Inpainting**: mã hoá ảnh gốc sang không gian tiềm ẩn, đặt mặt nạ nhiễu lên vùng cần vẽ, chỉ khử nhiễu trong vùng đó. Tham số denoise dùng dải 0,85 tới 0,90."),
+            (0, "**ControlNet** control_v11p_sd15_inpaint, độ mạnh 0,8: nhánh mạng song song nhận mặt nạ làm ảnh điều kiện, ép ảnh sinh bám điều kiện không gian."),
+            (0, "Vai trò ba thành phần: mặt nạ quyết định **khuyết tật ở đâu và hình gì**, LoRA quyết định **khuyết tật trông thế nào**, ControlNet giữ hai điều đó không mâu thuẫn."),
+            (0, "**Bốn chỉ số đánh giá**"),
+            (1, "FID: khoảng cách phân bố đặc trưng giữa ảnh thật và ảnh sinh, càng nhỏ càng tốt."),
+            (1, "SSIM: dùng cho hai mục đích khác nhau, đo bảo toàn nền và đo độ giống ảnh thật."),
+            (1, "Độ nét Laplace: mức chi tiết cạnh."),
+            (1, "mAP@0,5 và mAP@0,5:0,95 trên tập kiểm tra giữ nguyên 100% ảnh thật."),
+            (0, "Chỉ số quyết định cuối cùng là **mAP**. FID đẹp mà mAP không tăng thì vẫn là thất bại."),
+        ],
+        sizes=(17, 15, 14),
+    )
+
+    # --- 7. Kien truc chin giai doan ------------------------------------
+    table_slide(
+        prs,
+        "3. KIẾN TRÚC TỔNG THỂ: CHÍN GIAI ĐOẠN",
+        ["Giai đoạn", "Nội dung", "Sản phẩm bàn giao"],
+        [
+            ["1", "Thiết lập môi trường", "ComfyUI có API, mô hình nền, môi trường Python"],
+            ["2", "Tiền xử lý dữ liệu", "Patch 512 × 512 theo lớp, tập nền sạch"],
+            ["3", "Tinh chỉnh LoRA", "Mười hai tệp safetensors hạng 32"],
+            ["4", "Thiết kế quy trình ComfyUI", "Đồ thị nút JSON, mẫu lời nhắc theo lớp"],
+            ["5", "Sinh mặt nạ theo thủ tục", "Mười hai lớp sinh mặt nạ, ràng buộc vùng hàn"],
+            ["6", "Sinh ảnh hàng loạt", "Ảnh tổng hợp, mặt nạ chú thích, siêu dữ liệu JSON"],
+            ["7", "Hậu xử lý và chú thích", "COCO JSON, YOLO TXT, chia tập 70/20/10"],
+            ["8", "Đảm bảo chất lượng", "Báo cáo SSIM, kiểm tra chú thích, lưới kiểm tra bằng mắt"],
+            ["9", "Xác thực xuôi dòng", "Kết quả YOLOv8 theo bốn tỷ lệ trộn"],
+        ],
+        [1, 3.4, 6.2],
+        note="Bốn giai đoạn đầu chạy một lần. Giai đoạn 5 và 6 là vòng lặp sản xuất. Toàn hệ thống gồm **18.158 dòng mã Python** chia theo mười một mô-đun.",
+    )
+
+    # --- 8. Luong du lieu ----------------------------------------------
+    side_image_slide(
+        prs,
+        "3.1 LUỒNG DỮ LIỆU QUY TRÌNH SINH ẢNH",
+        [
+            (0, "Đầu vào là tệp cấu hình lô: số ảnh, phân bố lớp, đường dẫn mô hình."),
+            (0, "Bộ lập lịch dựng danh sách công việc theo phân bố lớp rồi **xáo trộn** để các lớp xen kẽ."),
+            (1, "Dừng giữa chừng vẫn thu được tập cân bằng lớp."),
+            (1, "Lỗi đặc thù một lớp không dồn vào một đoạn thời gian."),
+            (0, "Mỗi công việc đi qua: sinh mặt nạ trên CPU, tải lên ComfyUI, vá đồ thị nút, sinh ảnh trên GPU, tải về, hậu xử lý, lưu kèm siêu dữ liệu."),
+            (0, "Mỗi ảnh lưu **hạt giống và đường dẫn ảnh nền**, nên mọi ảnh trong tập đều tái lập được."),
+        ],
+        "fig-3-1-luong-du-lieu-pipeline.png",
+        "Hình 3.1: Luồng dữ liệu quy trình sinh ảnh hàng loạt",
+    )
+
+    # --- 9. Du lieu dau vao --------------------------------------------
+    text_slide(
+        prs,
+        "3.2 DỮ LIỆU ĐẦU VÀO VÀ TIỀN XỬ LÝ",
+        [
+            (0, "**Nguồn dữ liệu**"),
+            (1, "GDXray W0003: 73 phim gốc, trung vị 4990 × 1300 px, 876 khuyết tật gán nhãn. Vừa là nguồn ảnh nền, ảnh huấn luyện LoRA, vừa là tham chiếu tính FID."),
+            (1, "RIAWELC: bổ sung mẫu cho các lớp thiểu số."),
+            (1, "Ảnh RT từ AlphaNDT: kiểm tra chéo diện mạo ảnh sinh."),
+            (0, "**Đo từ 876 nhãn gốc**: tâm dải hàn ở khoảng 0,53 chiều cao ảnh, độ lệch chuẩn 0,28; số khuyết tật mỗi phim từ 1 tới 24, trung vị 1, phân bố lệch phải nặng."),
+            (0, "**Cắt patch**: ô vuông 512 × 512, PNG thang xám 8 bit, chia hai nhóm."),
+            (1, "Ô có khuyết tật, phân theo lớp, dùng huấn luyện LoRA."),
+            (1, "**827 ô nền sạch** làm nền cho bước inpainting: kết cấu hạt phim, độ sáng và biên vật liệu đều là thật, chỉ khuyết tật do mô hình vẽ thêm."),
+            (0, "Bộ lọc độ sáng chỉ giữ patch có trung bình từ **140 trở lên**: patch quá tối cho tương phản khuyết tật quá thấp và bị bước làm tối đẩy xuống bão hoà đen."),
+        ],
+        sizes=(17, 15, 14),
+    )
+
+    # --- 10. Sinh mat na -----------------------------------------------
+    image_text_slide(
+        prs,
+        "3.3 SINH MẶT NẠ THEO THỦ TỤC",
+        [
+            (0, "Mô-đun mask_generator gồm **1.809 dòng mã**: mười hai lớp sinh mặt nạ bám mô tả hình thái ISO 6520-1, một lớp cơ sở, tiện ích làm mềm biên và bộ ràng buộc vùng hàn."),
+            (0, "Mỗi lần sinh tạo **hai mặt nạ** từ cùng một hình dạng gốc: mặt nạ chú thích giữ nguyên kích thước, dùng xuất COCO và YOLO; mặt nạ inpaint giãn nở ellipse 21 × 21 rồi làm mờ Gauss bán kính 7 để mô hình đủ diện tích vẽ."),
+            (0, "Hệ quả: vành đai giữa hai mặt nạ là vùng mô hình được vẽ nhưng không thuộc vùng chú thích, nơi LoRA thường vẽ **quầng sáng** không có trên phim thật."),
+        ],
+        "fig-3-2-hai-duong-mask.png",
+        "Hình 3.2: Mặt nạ chú thích (trái) và mặt nạ inpaint sau khi giãn nở (phải)",
+    )
+
+    # --- 11. LoRA -------------------------------------------------------
+    table_slide(
+        prs,
+        "3.4 TINH CHỈNH LoRA CHO TỪNG LỚP KHUYẾT TẬT",
+        ["Tham số", "Giá trị", "Lý do chọn"],
+        [
+            ["Mô hình nền", "Stable Diffusion 1.5", "Cân bằng chất lượng và chi phí, hệ sinh thái ControlNet đầy đủ"],
+            ["Hạng r", "**32**", "Đủ dung lượng biểu diễn kết cấu phim, giữ tệp ở mức 37 MB"],
+            ["Alpha", "16", "Hệ số tỷ lệ 0,5, giảm nguy cơ LoRA lấn át mô hình nền"],
+            ["Bộ tối ưu", "AdamW8bit", "Tiết kiệm bộ nhớ, cho phép kích thước lô 4 trên 24 GB VRAM"],
+            ["Tốc độ học", "1e-4", "Giá trị chuẩn cho LoRA hạng trung"],
+            ["Số epoch", "10", "Đủ hội tụ trên vài trăm ảnh, chưa quá khớp rõ rệt"],
+            ["Thời gian huấn luyện", "**2,5 giờ mỗi lớp**", "Đo trên RTX 3090"],
+            ["Dung lượng mô hình", "37 MB mỗi lớp", "Tổng mười hai lớp khoảng 444 MB"],
+        ],
+        [2.6, 2.6, 6.4],
+        note="Mỗi lớp một mô hình riêng thay vì một mô hình đa lớp, tránh ảnh lai giữa hai lớp làm nhãn sai. Cấu hình sinh tự động thành TOML cho kohya-ss. Tổng số mô hình LoRA đã huấn luyện: **25**.",
+    )
+
+    # --- 12. ComfyUI va bo dieu phoi ------------------------------------
+    text_slide(
+        prs,
+        "3.5 QUY TRÌNH COMFYUI VÀ BỘ ĐIỀU PHỐI",
+        [
+            (0, "Quy trình sinh ảnh là một đồ thị nút JSON nạp vào ComfyUI qua REST API. Bộ điều phối vá các trường theo từng công việc: tên LoRA, lời nhắc thuận và nghịch, hạt giống, ảnh nền và mặt nạ."),
+            (0, "**Vòng lặp chín bước của batch-production-main.py**: kiểm tra nhiệt GPU, sinh mặt nạ, tải lên ComfyUI, vá đồ thị nút, đẩy hàng đợi, tải kết quả, hậu xử lý, lưu ảnh kèm siêu dữ liệu, ghi điểm kiểm tra."),
+            (0, "**Tham số vận hành**"),
+            (1, "Độ tin cậy: thử lại tối đa 3 lần, giãn cách 5 giây, điểm kiểm tra mỗi 100 ảnh, chờ ComfyUI tối đa 300 giây."),
+            (1, "Nhiệt: tạm dừng ở 85 °C, tiếp tục khi xuống dưới 75 °C, kiểm tra mỗi 30 giây."),
+            (1, "Hiệu năng: 8 worker sinh mặt nạ chạy trên CPU, bộ đệm 50 mặt nạ."),
+            (0, "Điểm kiểm tra lưu danh sách công việc đã xong dưới dạng JSON, nên phiên sản xuất nhiều ngày **chịu được mất điện hoặc ComfyUI dừng đột ngột**."),
+        ],
+        sizes=(17, 15, 14),
+    )
+
+    # --- 13. Hau xu ly ---------------------------------------------------
+    image_text_slide(
+        prs,
+        "3.5.3 BƯỚC HẬU XỬ LÝ QUY ƯỚC VÙNG TỐI",
+        [
+            (0, "Bước 1 khôi phục nền: mọi pixel ngoài mặt nạ chú thích được thay bằng pixel ảnh nền gốc, pha trộn qua mặt nạ làm mượt Gauss sigma 1,5, nhằm xoá quầng sáng ở vành đai."),
+            (0, "Bước 2 áp quy ước vùng rỗng hiện tối: nhân cường độ trong lòng khuyết tật với hệ số nhỏ hơn 1, từ 0,92 mặc định xuống 0,65 cho hốc kéo dài; lớp lẫn xỉ kim loại bỏ qua vì quy ước ngược."),
+            (0, "Đây là **bước can thiệp mạnh nhất** của quy trình, và cũng là điểm yếu lớn nhất của thiết kế hiện tại, phân tích ở mục 4.7."),
+        ],
+        "fig-3-3-nen-mask-tonghop.png",
+        "Hình 3.3: Ảnh nền sạch, mặt nạ chú thích và ảnh tổng hợp của một mẫu nứt",
+    )
+
+    # --- 14. Chu thich, QA, giao dien, thuc nghiem -----------------------
+    text_slide(
+        prs,
+        "3.6 – 3.9 CHÚ THÍCH TỰ ĐỘNG, KIỂM ĐỊNH, GIAO DIỆN, THỰC NGHIỆM",
+        [
+            (0, "**Chú thích tự động**: tìm thành phần liên thông trên mặt nạ, xuất COCO JSON (hộp bao, diện tích, đa giác phân đoạn, kiểm tra bằng pycocotools) và YOLO TXT kèm data.yaml. Chia tập 70/20/10 có phân tầng theo lớp."),
+            (0, "**Năm cổng chất lượng**: SSIM bảo toàn nền ≥ 0,90; tỷ lệ đạt SSIM ≥ 85%; chú thích 0 lỗi (dừng lô nếu sai); sai lệch phân bố ≤ 2%; kiểm tra bằng mắt trên trang HTML lưới ảnh > 95% đạt."),
+            (0, "**Giao diện một nút bấm**: mô-đun launcher 6.259 dòng chia 22 tệp, dựng bằng Gradio, chạy thường trú như dịch vụ systemd. Chọn cấu hình sẵn 500, 20.000 hoặc 100.000 ảnh, theo dõi tiến độ, nhiệt GPU và thông lượng theo thời gian thực."),
+            (0, "**Thiết kế thực nghiệm so sánh sáu mô hình nền**: siêu tham số huấn luyện giống hệt nhau, 100 hạt giống tất định dùng chung, cùng tập ảnh nền và mặt nạ. Điểm tổng hợp lấy trọng số FID 40%, SSIM 40%, độ nét 20%."),
+        ],
+        sizes=(17, 15, 14),
+    )
+
+    # --- 15. Moi truong va ket qua sinh anh ------------------------------
+    image_text_slide(
+        prs,
+        "4.1 – 4.2 MÔI TRƯỜNG VÀ KẾT QUẢ SINH ẢNH",
+        [
+            (0, "Phần cứng: RTX 3090 24 GB, hai Xeon E5-2696 v4 (88 luồng), 64 GB ECC. VRAM dùng khoảng **18 GB**, nhiệt GPU đỉnh **81 °C**, chưa chạm ngưỡng tạm dừng 85 °C."),
+            (0, "Lần chạy thử 500 ảnh: 27 phút, tỷ lệ thành công **98%**, thông lượng ổn định **1.097 ảnh/giờ**. Suy ra 20.000 ảnh cần khoảng 18 giờ, 100.000 ảnh khoảng 91 giờ."),
+            (0, "Lô báo cáo gồm **1.611 ảnh** của 11 lớp. Sáu vòng sửa lỗi đã xử lý: nạp mặt nạ qua kênh alpha, quy ước màu lớp nứt, bộ lọc độ sáng nền và cách ghép khuyết tật lên nền gốc."),
+        ],
+        "fig-4-1-luoi-mau-10-lop.png",
+        "Hình 4.1: Lưới ảnh mẫu của mười lớp khuyết tật sinh bằng quy trình có ControlNet",
+    )
+
+    # --- 16. So sanh sau mo hinh nen -------------------------------------
+    table_slide(
+        prs,
+        "4.3 KẾT QUẢ SO SÁNH SÁU MÔ HÌNH NỀN",
+        ["Hạng", "Mô hình nền", "FID", "SSIM", "Độ nét Laplace", "Điểm tổng hợp"],
+        [
+            ["1", "**Stable Diffusion 1.5 gốc**", "207,04", "0,3468", "**324,5**", "**0,3527**"],
+            ["2", "Realistic Vision V5.1", "198,55", "0,3821", "180,0", "0,2936"],
+            ["3", "CyberRealistic V4.2", "210,38", "0,3670", "210,8", "0,2844"],
+            ["4", "Absolute Reality v1.8.1", "211,92", "0,3675", "210,0", "0,2813"],
+            ["5", "MedXRay", "214,53", "0,3651", "216,3", "0,2794"],
+            ["6", "MedXRay Direct", "214,53", "0,3651", "216,3", "0,2794"],
+        ],
+        [0.9, 4.0, 1.4, 1.4, 2.0, 1.9],
+        font_size=14,
+        note="Mô hình nền gốc thắng nhờ độ nét. Hai biến thể chuyên ảnh y tế xếp cuối với chỉ số trùng khít tới bốn chữ số: giả thiết kiến thức X-quang y tế chuyển giao được sang ảnh công nghiệp **không được dữ liệu ủng hộ**. Cả sáu mô hình có FID 198 tới 215, còn xa ngưỡng 60 đặt ra.",
+        top=1.5,
+    )
+
+    # --- 17. QA va doi chieu chi tieu ------------------------------------
+    table_slide(
+        prs,
+        "4.4 & 4.6 KIỂM ĐỊNH CHẤT LƯỢNG VÀ ĐỐI CHIẾU CHỈ TIÊU",
+        ["Mã", "Chỉ tiêu", "Mục tiêu", "Kết quả đo", "Kết luận"],
+        [
+            ["NFR-1", "Thông lượng sinh ảnh", "900 – 1.800 ảnh/giờ", "1.097 ảnh/giờ", "Đạt"],
+            ["NFR-2", "Thời gian sinh 20.000 ảnh", "Dưới 24 giờ", "Khoảng 18 giờ", "Đạt"],
+            ["NFR-3", "SSIM bảo toàn nền", "Trung bình trên 0,90", "**0,976**", "Đạt"],
+            ["NFR-4", "Tính hợp lệ chú thích", "100% hợp lệ", "100% trên lô chạy đủ bước", "Đạt có điều kiện"],
+            ["NFR-5", "Mức dùng VRAM", "Dưới 20 GB", "Khoảng 18 GB", "Đạt"],
+            ["NFR-6", "Chu kỳ điểm kiểm tra", "Mỗi 100 ảnh", "Mỗi 100 ảnh", "Đạt"],
+            ["NFR-7", "Cải thiện mAP của YOLOv8", "Trên 5%", "**+2,7 điểm phần trăm**", "**Không đạt**"],
+            ["NFR-8", "Thời gian xác thực xuôi dòng", "Dưới 24 giờ", "Khoảng 12 giờ", "Đạt"],
+            ["FR-1…10", "Nhóm yêu cầu chức năng", "Hoàn thành", "Đã cài đặt và chạy được", "Đạt"],
+        ],
+        [1.1, 3.4, 2.4, 3.0, 1.8],
+        note="Hai cổng chất lượng không đạt đều do lệch cấu hình giữa bộ sinh và bộ kiểm, không phải lỗi quy trình: thư mục kiểm gộp cả lô thử nghiệm chưa chạy hậu xử lý, và bản khai báo phân bố lớp còn là bản cũ năm lớp.",
+        top=1.45,
+    )
+
+    # --- 18. Xac thuc YOLOv8 ---------------------------------------------
+    slide = add_slide(prs, L_OBJECT)
+    set_title(slide, "4.5 XÁC THỰC XUÔI DÒNG BẰNG YOLOv8", 30)
+    remove_placeholder(slide, 1)
+    headers = ["Thử nghiệm", "Tập huấn luyện", "mAP@0,5", "mAP@0,5:0,95"]
+    rows = [
+        ["Đối chứng", "100% ảnh thật", "68,5%", "42,3%"],
+        ["**Trộn 20%**", "20% tổng hợp, 80% thật", "**71,2%**", "**44,8%**"],
+        ["Trộn 50%", "50% tổng hợp, 50% thật", "70,1%", "43,9%"],
+        ["Chỉ tổng hợp", "100% tổng hợp", "58,3%", "35,2%"],
+    ]
+    table = slide.shapes.add_table(5, 4, Inches(0.85), Inches(1.45),
+                                   Inches(6.2), Inches(2.3)).table
+    widths = [1.5, 2.2, 1.25, 1.25]
+    for i, w in enumerate(widths):
+        table.columns[i].width = Inches(w)
+    for row in table.rows:
+        row.height = Inches(0.46)
+    for j, head in enumerate(headers):
+        cell = table.cell(0, j)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = NAVY
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        run = cell.text_frame.paragraphs[0].add_run()
+        run.text = head
+        run.font.size, run.font.bold, run.font.name = Pt(12), True, "Arial"
+        run.font.color.rgb = WHITE
+        cell.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+    for i, row in enumerate(rows):
+        for j, value in enumerate(row):
+            cell = table.cell(i + 1, j)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = WHITE if i % 2 == 0 else ROW_ALT
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            bold = value.startswith("**")
+            p = cell.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.LEFT if j == 1 else PP_ALIGN.CENTER
+            run = p.add_run()
+            run.text = value.replace("**", "")
+            run.font.size, run.font.bold, run.font.name = Pt(12), bold, "Arial"
+            run.font.color.rgb = BLUE if bold else INK
+
+    notes = slide.shapes.add_textbox(Inches(0.85), Inches(3.95),
+                                     Inches(6.2), Inches(2.7))
+    fill_bullets(notes.text_frame, [
+        (0, "Tập kiểm tra giữ nguyên **100% ảnh thật** ở cả bốn cấu hình."),
+        (0, "Trộn 20% nâng mAP@0,5 thêm **2,7 điểm phần trăm**, nhất quán trên cả hai chỉ số."),
+        (0, "Đường cong có cực đại quanh 20% tới 30%, sau đó bão hoà."),
+        (0, "Huấn luyện chỉ bằng ảnh tổng hợp tụt **10,2 điểm phần trăm**: ảnh sinh chưa thay được ảnh thật."),
+        (0, "Vai trò thực tế: **công cụ bù dữ liệu cho lớp thiểu số**."),
+    ], sizes=(15, 13, 12))
+    pic = place_image(slide, "fig-4-4-map-theo-ty-le-tong-hop.png",
+                      Inches(7.4), Inches(1.6), Inches(5.1), Inches(4.4))
+    add_caption(slide, "Hình 4.4: mAP của YOLOv8 theo tỷ lệ ảnh tổng hợp",
+                Inches(7.2), pic.top + pic.height + Inches(0.08), Inches(5.5))
+
+    # --- 19. Han che -----------------------------------------------------
+    text_slide(
+        prs,
+        "4.7 HẠN CHẾ QUAN SÁT ĐƯỢC TRÊN ẢNH SINH RA",
+        [
+            (0, "**Hạn chế gốc: bước hậu xử lý đã vô hiệu hoá mô hình khuếch tán.** Hàm apply_dark_defect_convention thay cứng mọi pixel ngoài mặt nạ bằng pixel nền gốc rồi nhân hệ số cố định trong lòng khuyết tật. Diện mạo khuyết tật do **mặt nạ thủ tục** quyết định, không phải do quá trình khuếch tán."),
+            (1, "Đây cũng là lý do bản có và không có ControlNet khác nhau rất ít: ControlNet tác động vào nội dung mà bước hậu xử lý xoá đi."),
+            (0, "**Biên cứng, không có bán dạ**: mặt nạ nhị phân cho biên sắc nét, trong khi khuyết tật trên phim thật luôn có vùng chuyển tiếp."),
+            (0, "**Hạt nhiễu không liên tục qua biên**: lòng khuyết tật mịn hơn vùng xung quanh vì tạo bằng nhân hệ số, không tái tạo nhiễu lượng tử."),
+            (0, "**Mật độ phẳng**: hệ số cố định cho vùng tối đều, khuyết tật thật có gradient theo profile chiều dày."),
+            (0, "**Sai quy ước ở một số lớp**: lớp không thấu hiện sáng thay vì tối, lẫn xỉ kim loại hiện thành đa giác trắng đặc."),
+            (0, "**Nhãn lấy từ mặt nạ đầu vào**, không đo từ khuyết tật thực sinh ra, nên ảnh vẽ hỏng vẫn lọt vào tập huấn luyện."),
+            (0, "**Không sinh được ảnh âm tính khó**: mỗi ảnh đúng một khuyết tật, không có ảnh sạch chứa cấu trúc dễ nhầm."),
+        ],
+        title_size=28,
+        sizes=(15, 13, 12),
+    )
+
+    # --- 20. Ket luan ----------------------------------------------------
+    text_slide(
+        prs,
+        "5.1 KẾT LUẬN",
+        [
+            (0, "**Về hệ thống**: chín giai đoạn đã cài đặt và chạy được, 18.158 dòng mã Python, 12 lớp khuyết tật, thông lượng 1.097 ảnh/giờ, điểm kiểm tra mỗi 100 ảnh, thử lại tự động và giám sát nhiệt GPU, đóng gói sau giao diện một nút bấm."),
+            (0, "**Về chú thích**: hướng sinh ảnh theo nhãn đã biết trước loại bỏ hoàn toàn khâu gán nhãn thủ công. Mọi ảnh tái lập được nhờ lưu hạt giống và đường dẫn ảnh nền."),
+            (0, "**Về chất lượng ảnh**: SSIM bảo toàn nền 0,976 xác nhận hệ thống chỉ can thiệp đúng vùng khuyết tật, nhưng FID 198 tới 215 cho thấy khoảng cách miền còn lớn."),
+            (0, "**Về hiệu quả xuôi dòng**: trộn 20% nâng mAP@0,5 từ 68,5% lên 71,2%. Mức cải thiện là thật nhưng chưa đạt chỉ tiêu 5%."),
+            (0, "**Đóng góp chính**"),
+            (1, "Một quy trình sản xuất hoàn chỉnh và tái lập được, khác với các công trình trình diễn vài trăm ảnh."),
+            (1, "Đo bằng mAP trên ảnh thật đã phơi bày kết luận mà các chỉ số ảnh đơn thuần không cho thấy: hệ thống kiểm soát tốt **hình thái** nhưng chưa tái tạo được **vật lý ảnh**."),
+        ],
+        sizes=(17, 15, 14),
+    )
+
+    # --- 21. Huong phat trien --------------------------------------------
+    table_slide(
+        prs,
+        "5.3 HƯỚNG PHÁT TRIỂN: SÁU NHÓM THAY ĐỔI",
+        ["Mã", "Nội dung thay đổi", "Cổng kiểm và ngưỡng"],
+        [
+            ["**C1**", "Khử quầng sáng từ gốc: thu hẹp giãn nở mặt nạ từ 21 xuống 9, dùng mặt nạ mềm, giảm denoise xuống 0,55 – 0,65", "Cường độ vành đai giữa hai mặt nạ giảm từ 70% trở lên"],
+            ["**C2**", "Gỡ hoặc thay bước hậu xử lý sau khi C1 đạt, sửa dấu quy ước cho lớp không thấu và lẫn xỉ kim loại", "Dấu độ tối đúng quy ước ở toàn bộ lớp"],
+            ["**C3**", "Chân thực vật lý phim: thêm bán dạ ở biên, tái tạo nhiễu lượng tử, profile độ dày thay hệ số phẳng", "FID ≤ 60; tỷ số phương sai 0,8 – 1,2"],
+            ["**C4**", "Thêm nhánh sinh ảnh âm tính khó, trộn 20% – 30% vào tập huấn luyện", "Giảm báo nhầm trên vùng nền"],
+            ["**C5**", "Sinh cặp tương phản cho các lớp dễ lẫn", "Recall của nhánh phân biệt hai lớp tăng"],
+            ["**C6**", "Đo nhãn từ khuyết tật thực sinh ra thay vì lấy từ mặt nạ đầu vào", "IoU mặt nạ và khuyết tật đo được ≥ 0,7"],
+        ],
+        [0.8, 6.2, 4.0],
+        font_size=12,
+        note="Thứ tự triển khai: C1 và C3 trước, rồi C6, C5, C4, cuối cùng C2. Cổng nghiệm thu cuối cùng không phải FID hay SSIM mà là **mAP đo lại trên tập kiểm tra ảnh thật**. Hai ràng buộc bất biến: ảnh tổng hợp chỉ vào tập huấn luyện, và không thay đổi tập kiểm tra đã dùng cho báo cáo này.",
+        top=1.4,
+    )
+
+    # --- 22. Tai lieu tham khao ------------------------------------------
+    text_slide(
+        prs,
+        "TÀI LIỆU THAM KHẢO",
+        [
+            (0, "D. Mery và cộng sự, \"GDXray: The database of X-ray images for nondestructive testing\", Journal of Nondestructive Evaluation, vol. 34, 2015."),
+            (0, "R. Rombach và cộng sự, \"High-Resolution Image Synthesis with Latent Diffusion Models\", CVPR, 2022."),
+            (0, "J. Ho, A. Jain, P. Abbeel, \"Denoising Diffusion Probabilistic Models\", NeurIPS, 2020."),
+            (0, "E. J. Hu và cộng sự, \"LoRA: Low-Rank Adaptation of Large Language Models\", ICLR, 2022."),
+            (0, "L. Zhang, A. Rao, M. Agrawala, \"Adding Conditional Control to Text-to-Image Diffusion Models\", ICCV, 2023."),
+            (0, "M. Heusel và cộng sự, \"GANs Trained by a Two Time-Scale Update Rule Converge to a Local Nash Equilibrium\", NeurIPS, 2017."),
+            (0, "Z. Wang và cộng sự, \"Image Quality Assessment: From Error Visibility to Structural Similarity\", IEEE TIP, vol. 13, 2004."),
+            (0, "G. Jocher, A. Chaurasia, J. Qiu, \"Ultralytics YOLOv8\", phần mềm mã nguồn mở, 2023."),
+            (0, "ISO 6520-1:2007, Classification of geometric imperfections in metallic materials."),
+            (0, "ISO 17636-1:2022, Non-destructive testing of welds — Radiographic testing."),
+            (0, "D. Totino, F. Spadafora, M. Lupinacci, \"RIAWELC: A Novel Dataset of Radiographic Images for Automatic Weld Defects Classification\", IJECER, 2023."),
+        ],
+        sizes=(14, 13, 12),
+    )
+
+
+def main():
+    prs = Presentation(str(TEMPLATE))
+    build_cover(prs)
+    # Xoa cac slide huong dan cua form mau, giu bia, muc luc va slide hoi dap
+    drop_slides(prs, [2, 3, 4, 5, 6, 7, 8, 9, 10, 12])
+    renumber_slide_parts(prs)
+    build_content(prs)
+    move_slide_to_end(prs, 2)   # dua slide "HOI VA DAP" xuong cuoi
+    prs.save(str(OUTPUT))
+    print("Da ghi:", OUTPUT, "| so slide:", len(prs.slides.__iter__.__self__._sldIdLst))
+
+
+if __name__ == "__main__":
+    main()

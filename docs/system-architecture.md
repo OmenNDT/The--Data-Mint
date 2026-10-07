@@ -1,8 +1,8 @@
 # System Architecture - The Data Mint Pipeline
 
-**Document Version**: 1.1
-**Last Updated**: 2026-02-14
-**Scope**: Full 9-phase synthetic data generation pipeline + Gradio UI
+**Document Version**: 1.2
+**Last Updated**: 2026-03-03
+**Scope**: Full 9-phase synthetic data generation pipeline + Gradio UI + Benchmark Pipeline
 
 ---
 
@@ -29,9 +29,11 @@
 │  └─ Output: 5 safetensors files (~185 MB total)                        │
 │                                                                          │
 │  PHASE 4: ComfyUI Workflow Design                                       │
-│  ├─ Create SD1.5 + LoRA + ControlNet inpaint workflow                  │
+│  ├─ Create SD1.5 + LoRA + VAEEncode + SetLatentNoiseMask workflow      │
 │  ├─ Define defect-type prompts (YAML)                                   │
-│  └─ Sampler params: Euler, 20 steps, CFG 7.0                           │
+│  ├─ Sampler params: Euler, 20 steps, CFG 7.0                           │
+│  ├─ Denoise: 1.0 for crack (full freedom), 0.7 for others             │
+│  └─ Background filter: mean ≥140 (0-255) for realistic X-ray tone      │
 │                                                                          │
 │  PHASE 5: Procedural Mask Generation (CPU Parallel)                     │
 │  ├─ 5 defect generators (crack, porosity, inclusion, LOF, undercut)    │
@@ -64,6 +66,15 @@
 │  ├─ Evaluate on held-out real test set                                 │
 │  ├─ Compare mAP across ratios                                          │
 │  └─ Output: Validation report + optimal ratio recommendation           │
+│                                                                          │
+│  PHASE 10: Benchmark Pipeline (Model Comparison)                       │
+│  ├─ Download 6 models: baseline + 5 challengers                        │
+│  │  (baseline, medxray, realvis, absreal, cyberreal, medxray-direct)  │
+│  ├─ Train LoRAs on all 6 models (25 LoRA files total)                 │
+│  ├─ Generate 500 deterministic test images per model (100 per defect)  │
+│  ├─ Compute FID/SSIM/Sharpness metrics per model per defect           │
+│  ├─ Status: In Progress (Rev01-Rev06 complete, generation paused)     │
+│  └─ Output: Composite ranking + HTML report + per-model gallery        │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,6 +116,13 @@
     │                │                │
     ├────────────────┼────────────────┤
     │                │                │
+    │     ┌──────────▼────────────┐
+    │     │ Background Filtering  │
+    │     │ (mean ≥ 140)          │
+    │     │ Pre-darkens masked    │
+    │     │ region (target=3)     │
+    │     └──────────┬────────────┘
+    │                │
     │     ┌──────────▼────────────────────┐
     │     │ Batch Production Main          │
     │     │ - Job Scheduler                │
@@ -121,11 +139,20 @@
     │     │  ↓ Poll progress    │
     │     └──────────┬──────────┘
     │                │
-    │     ┌──────────▼──────────────────┐
-    │     │  SD 1.5 + LoRA + ControlNet  │
-    │     │  (GPU: RTX 3090)             │
-    │     │  Sampler: Euler, 20 steps    │
-    │     └──────────┬──────────────────┘
+    │     ┌──────────▼──────────────────────┐
+    │     │  SD 1.5 + LoRA +                │
+    │     │  VAEEncode + SetLatentNoiseMask  │
+    │     │  (GPU: RTX 3090)                 │
+    │     │  Sampler: Euler, 20 steps        │
+    │     │  Denoise: 1.0 crack, 0.7 other   │
+    │     └──────────┬──────────────────────┘
+    │                │
+    │     ┌──────────▼──────────┐
+    │     │  Composite Dark     │
+    │     │  (post-generation)  │
+    │     │  Blend onto original│
+    │     │  bright background  │
+    │     └──────────┬──────────┘
     │                │
     └────────────────┼────────────────────┘
                      │
@@ -327,6 +354,17 @@ pipeline/
 │   ├── yolo-trainer.py               # Training wrapper (190 LOC)
 │   └── evaluation-metrics.py         # Metrics analysis (208 LOC)
 │
+├── benchmark/                            # Model comparison
+│   ├── download-benchmark-models.py  # Model fetcher (237 LOC)
+│   ├── generate-training-configs.py  # Config generator (178 LOC)
+│   ├── generate-benchmark-configs.py # Batch config gen (207 LOC)
+│   ├── train-benchmark-loras.sh      # Training orchestrator (124 LOC)
+│   ├── run-benchmark-generation.py   # Deterministic gen (325 LOC)
+│   ├── convert-synthetic-to-yolo-format.py # Mask conversion (176 LOC)
+│   ├── benchmark-metrics-calculator.py # FID/SSIM/Sharpness (119 LOC)
+│   ├── benchmark-evaluation-pipeline.py # Evaluation runner (198 LOC)
+│   └── benchmark-html-report-generator.py # Report gen (186 LOC)
+│
 ├── launcher/                             # Gradio UI
 │   ├── gradio_launcher_app.py        # Main entry point (342 LOC)
 │   ├── pipeline_orchestrator.py      # Phase manager (268 LOC)
@@ -392,6 +430,58 @@ validation-main.py (entry point)
     └─ EvaluationMetrics
         └─ numpy, pandas
 ```
+
+---
+
+## Plant HMI (giám sát khu sinh ảnh như nhà máy)
+
+**Location**: `pipeline/plant_hmi/` · URL `http://<host>:7860/plant-hmi/` (gắn vào FastAPI của Gradio, không thêm port).
+Phase 1 chỉ đọc, không sửa pipeline. Plan: `plans/260926-1959-plant-hmi-phase1-static-pid-poller/`.
+
+```
+/proc (tiến trình batch-production-main.py) ─┐
+output_base_dir/<defect>/*.png (level thật) ──┤
+checkpoints/batch_state.json ─────────────────┼─> plant_snapshot_builder ─> derive_alarms (thuần)
+nvidia-smi, ComfyUI /system_stats (cache nền) ┤        │                     └> AlarmOnDelay
+/proc/meminfo, vmstat, loadavg ───────────────┘        └> GET /plant-hmi/api/snapshot ─> SVG P&ID (poll 3 s)
+```
+
+Tag: TK-102 hàng đợi job → R-201 sinh mask → P-601 bơm inpaint ComfyUI → R-401 hậu xử lý → TK-801 silo ảnh;
+TK-101 nền sạch, D-901 job lỗi; U-901 GPU cục bộ, U-902 ComfyUI, U-903 RAM/swap/load.
+Alarm: COMFY_DOWN (LO/HI, 15 s), PUMP_WEDGED (10 phút không ra ảnh), STALE_CHECKPOINT (60 s),
+GPU_HOT (≥85°C, 30 s), MEM_LOW (<10%), SWAP_THRASH (>1000 trang/s, 10 s).
+Lưu ý: restart `tdm-backend.service` giết job sinh ảnh khởi chạy từ Gradio (cùng cgroup).
+
+**Phase 2 (telemetry, 2026-09-26)**: `batch-production-main.py` bọc các bước tốn thời gian bằng
+`plant_telemetry_emitter.instrument` (R-201 mask, P-601 upload/queue/infer/download, R-401 post,
+U-901 thermal_hold) và ghi kết quả job (ok/retry/failed) vào `plant_hmi/telemetry/batch-<pid>-<start>.jsonl`
+(một `os.write` mỗi dòng, lỗi ghi không bao giờ làm hỏng job, `PLANT_TELEMETRY=0` để tắt).
+Backend tail file → `compute_flows` → đồng hồ KI-201/KI-601/KI-401 (p50 5 phút), D-901 trực tiếp,
+alarm JOB_ERRORS / THERMAL_HOLD / COMFY_HOST_NOT_LOCAL; `/plant-hmi/api/events` cấp dữ liệu cho hạt
+(1 hạt = 1 job, trễ hiển thị 4 s). ComfyUI chạy chung máy: `comfyui.host = 127.0.0.1`, khởi động bằng
+`comfyui/.venv` (lệnh trong `start-servers.sh`, port 8188).
+
+**Phase 3 (historian + replay, 2026-09-26)**: `plant_historian_sampler` (luồng nền 10 s, `PLANT_HISTORIAN_INTERVAL_S`)
+ghi 18 tag vào SQLite `plant_hmi/historian/plant-historian.sqlite` (WAL, giữ 30 ngày) và nhật ký báo động
+raised/cleared. API `/plant-hmi/api/history/{tags,samples,alarms,runs,events}`. Giao diện: chế độ Trực tiếp / Phát lại
+(x1/x10/x60/x600, đọc lại telemetry của run), panel xu hướng và nhật ký báo động.
+
+**Phase 4 (hộp đen ComfyUI)**: `plant_comfyui_progress_observer` lắng nghe `ws://127.0.0.1:8188/ws` (chỉ đọc). Pipeline gửi
+prompt không kèm client_id nên ComfyUI chỉ broadcast `status`, `progress`, `progress_state`; observer dựng node đang chạy,
+bước sampler, it/s, thời gian prompt. API `/plant-hmi/api/comfyui/progress`; alarm COMFY_STALLED (đang chạy prompt,
+> 60 s không có tiến độ). Phụ thuộc: `websocket-client` (`pipeline/requirements.txt`).
+
+**Phase 5 (setpoint)**: `plant_setpoints` REGISTRY (`sampler_steps`, 10..40, áp dụng từ batch sau). Tiến trình batch tự
+resolve lúc khởi động: env `PLANT_SP_SAMPLER_STEPS` (LOCAL) > store `plant_hmi/setpoints/setpoints.json` (REMOTE) > recipe YAML,
+rồi phát bản ghi `kind=config` với giá trị scheduler thực dùng (PV). API `/plant-hmi/api/control/{setpoints,audit}`,
+PUT cần header `X-Plant-HMI: 1`, audit JSONL ghi IP client. Faceplate SP/PV, nguồn PV, xác nhận 2 bước.
+
+**Phase 6 (điều khiển + quản lý báo động)**: Start/Stop batch từ HMI (`/plant-hmi/api/control/batch`), khởi chạy bằng
+`systemd-run --user --unit=tdm-batch-*` (ngoài cgroup `tdm-backend`, restart backend không giết batch). Permissive chặn start:
+NO_LIVE_BATCH, COMFY_UP, NO_TRAINING, MEM_OK, CONFIG_VALID; cảnh báo MAIN_SILO. Config chỉ chọn trong `config/` và
+`config/_generated/`. Báo động ISA-18.2: xác nhận, tạm tắt 15 phút/1 giờ/8 giờ có lý do (`/plant-hmi/api/alarms/*`), journal ghi
+acked/shelved/unshelved. Mọi route ghi dùng `plant_request_guards.require_trusted_request` (header + Origin/Sec-Fetch-Site).
+Không có vòng điều khiển kín: historian 130 giờ cho thấy GPU tối đa 75°C khi có batch, chưa chạm ngưỡng 85°C.
 
 ---
 
@@ -652,5 +742,5 @@ Cumulative:
 
 ---
 
-**Last Updated**: 2026-02-14
-**Version**: 1.1
+**Last Updated**: 2026-03-03
+**Version**: 1.2

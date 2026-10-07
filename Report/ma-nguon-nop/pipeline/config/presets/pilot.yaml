@@ -1,0 +1,19 @@
+# Pilot Preset - Quick test run
+# 500 images, fast validation
+# Estimated time: ~30 minutes
+
+name: "Pilot"
+description: "Chạy thử nhanh - 500 ảnh, kiểm tra nhanh"
+
+generation:
+  total_images: 500
+
+validation:
+  epochs: 20
+  model_size: "n"
+  batch_size: 16
+  ratios: [0.0, 0.5, 1.0]
+
+phases_to_run: [6, 7, 8]
+
+estimated_minutes: 30

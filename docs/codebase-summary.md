@@ -1,6 +1,6 @@
 # Codebase Summary - The Data Mint
 
-**Generated**: 2026-02-14
+**Generated**: 2026-03-03
 **Repomix Tokens**: 1,861,620 (6.55M characters)
 **Total Files**: 5,116
 **Source Files**: ~800 (Python, Shell, YAML, Config)
@@ -15,6 +15,7 @@
 - **[Post-Processing](#post-processing)** — Annotation conversion
 - **[Quality Assurance](#quality-assurance)** — QA validation
 - **[Validation](#validation)** — YOLOv8 training & testing
+- **[Benchmark Pipeline](./benchmark.md)** — Base model comparison
 - **[Launcher UI](#launcher-ui)** — One-click Gradio interface
 - **[Tests](#tests)** — Unit & integration tests
 - **[Configuration](#configuration)** — YAML/TOML configs
@@ -523,6 +524,30 @@
 
 ---
 
+## Plant HMI
+
+**Location**: `pipeline/plant_hmi/` (phase 1, chỉ đọc) · trang `/plant-hmi/` trên port 7860
+- `plant_host_readers.py`: quét /proc tìm tiến trình batch, RAM, tốc độ swap, load
+- `plant_production_readers.py`: config YAML, đếm ảnh silo (cache 4 s), checkpoint
+- `plant_slow_probes.py`: probe nền single-flight cho nvidia-smi và ComfyUI
+- `plant_alarm_rules.py`: `derive_alarms` thuần + `AlarmOnDelay`
+- `plant_snapshot_builder.py`, `plant_hmi_routes.py`: snapshot JSON + route FastAPI
+- `static/`: HTML + SVG P&ID + JS thuần (Dark Neumorphism, ISA-101)
+- `plant_telemetry_emitter.py`: chạy trong tiến trình batch, ghi JSONL enter/exit/job (phase 2)
+- `plant_telemetry_collector.py`, `plant_flow_metrics.py`: tail telemetry, tính lưu lượng/KI (thuần)
+- `plant_comfyui_readers.py`: tiến trình ComfyUI cục bộ, kiểm tra host trong config có phải máy này
+- `static/plant-hmi-particle-layer.js`: hạt theo job; `plant-hmi-event-stream.js`, `plant-hmi-visible-polling.js`
+- `plant_historian_store.py`, `plant_historian_sampler.py`, `plant_history_routes.py`: historian SQLite, lấy mẫu 10 s, API history (phase 3)
+- `static/plant-hmi-replay-*.js`, `plant-hmi-trend-panel.js`, `plant-hmi-alarm-journal.js`, `plant-hmi-render-panels.js`: phát lại, xu hướng, nhật ký
+- `plant_comfyui_progress_{observer,state,routes}.py` + `static/plant-hmi-comfyui-progress-panel.js`: hộp đen ComfyUI (phase 4)
+- `plant_setpoints.py`, `plant_setpoint_routes.py` + `static/plant-hmi-setpoint-faceplate.js`: setpoint SP-601 (phase 5)
+- `plant_batch_control*.py`, `plant_batch_{config_whitelist,process_ops,audit}.py` + `static/plant-hmi-batch-control*.js`: start/stop (phase 6A)
+- `plant_alarm_state.py`, `plant_alarm_state_routes.py` + `static/plant-hmi-alarm-{list,api}.js`: ack/shelve (phase 6B)
+- `plant_request_guards.py`: chặn CSRF dùng chung cho mọi route ghi
+- Test: `pipeline/tests/test-plant-hmi-{alarm-rules,telemetry,historian,comfyui-progress,setpoints,batch-control,alarm-state}.py`
+
+---
+
 ## Launcher UI
 
 **Location**: `pipeline/launcher/`
@@ -666,9 +691,12 @@ pytest tests/ -v --cov=batch_manager,mask_generator,launcher --cov-report=html
 | `generation.total_images` | 20000 | Images to generate |
 | `generation.resolution` | 512 | Output resolution (px) |
 | `generation.defect_distribution` | crack: 0.25, ... | Per-defect percentages |
+| `generation.background_filter` | mean ≥ 140 | Brightness threshold for clean images |
 | `lora_models.*` | xray_*_lora_r32.safetensors | LoRA filenames |
 | `sampler.steps` | 20 | Diffusion steps |
 | `sampler.cfg` | 7.0 | Classifier-free guidance |
+| `sampler.denoise_crack` | 1.0 | Full latent freedom for cracks |
+| `sampler.denoise_other` | 0.7 | Preserve background for other defects |
 | `thermal.max_temp_celsius` | 85 | Pause threshold |
 | `thermal.resume_temp_celsius` | 75 | Resume threshold |
 | `reliability.checkpoint_interval` | 100 | Checkpoints per N images |
@@ -776,6 +804,13 @@ pytest tests/ -v --cov=batch_manager,mask_generator,launcher --cov-report=html
 
 ---
 
-**Last Updated**: 2026-02-14
-**Version**: 1.1
-**Total Lines of Code**: ~8,850 (pipeline directory including launcher & tests)
+**Benchmark Pipeline Section Added**: 2026-03-03
+- 6 models: baseline SD 1.5 + 5 challengers (medxray, realvis, absreal, cyberreal, medxray-direct)
+- 500 deterministic test images per model (100 per defect type)
+- FID/SSIM/Sharpness metrics + HTML report
+- Rev01-Rev06 revisions completed (LoadImage MASK alpha bug fix, crack color consistency, background filtering)
+- Composite ranking: FID (40%) + SSIM (40%) + Sharpness (20%)
+
+**Last Updated**: 2026-03-03
+**Version**: 1.2
+**Total Lines of Code**: ~10,200 (pipeline directory including launcher, tests, & benchmark)

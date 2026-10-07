@@ -1,0 +1,58 @@
+comfyui:
+  host: 127.0.0.1
+  port: 8188
+  prompts_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/defect-type-prompt-templates.yaml
+  workflow_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/sd15-lora-controlnet-inpaint-batch-api-workflow.json
+generation:
+  defect_distribution:
+    # Equal ratios: 10 classes × 0.1 × 2000 = 200 images/class = 2000 total
+    crack: 0.1
+    porosity: 0.1
+    lack_of_fusion: 0.1
+    lack_of_penetration: 0.1
+    clustered_porosity: 0.1
+    slag_inclusion: 0.1
+    linear_porosity: 0.1
+    elongated_cavity: 0.1
+    metallic_inclusion: 0.1
+    linear_slag_inclusion: 0.1
+  resolution: 512
+  total_images: 300
+lora_models:
+  crack: xray_crack_lora_r32.safetensors
+  porosity: xray_porosity_lora_r32.safetensors
+  lack_of_fusion: xray_lof_lora_r32.safetensors
+  lack_of_penetration: xray_lack_of_penetration_lora_r32.safetensors
+  clustered_porosity: xray_clustered_porosity_lora_r32.safetensors
+  slag_inclusion: xray_slag_inclusion_lora_r32.safetensors
+  linear_porosity: xray_linear_porosity_lora_r32.safetensors
+  elongated_cavity: xray_elongated_cavity_lora_r32.safetensors
+  metallic_inclusion: xray_metallic_inclusion_lora_r32.safetensors
+  linear_slag_inclusion: xray_linear_slag_inclusion_lora_r32.safetensors
+output:
+  organize_by_defect: true
+  save_masks: true
+  save_metadata: true
+paths:
+  backgrounds_dir: /home/sontn/Projects/The Data Mint/dataset/processed/patches_512_Confimed/clean
+  checkpoint_dir: /home/sontn/Projects/The Data Mint/pipeline/checkpoints
+  logs_dir: /home/sontn/Projects/The Data Mint/pipeline/logs
+  output_base_dir: /home/sontn/Projects/The Data Mint/output/synthetic
+performance:
+  mask_prefetch_count: 50
+  mask_prefetch_workers: 8
+reliability:
+  checkpoint_interval: 100
+  max_retries: 3
+  retry_delay_seconds: 5
+  timeout_seconds: 300
+sampler:
+  cfg: 9.0
+  name: euler
+  scheduler: normal
+  steps: 25
+thermal:
+  check_interval_seconds: 30
+  enabled: true
+  max_temp_celsius: 85
+  resume_temp_celsius: 75

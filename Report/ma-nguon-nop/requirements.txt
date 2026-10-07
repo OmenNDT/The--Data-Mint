@@ -1,0 +1,37 @@
+# The Data Mint - phu thuoc Python
+# Kiem chung tren Python 3.12, Linux, NVIDIA RTX 3090 (CUDA)
+# Cai dat:  python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+
+# --- Xu ly anh, tinh toan so ---
+numpy==2.4.2
+scipy==1.17.0
+pillow==12.1.1
+opencv-python-headless==4.13.0.92
+scikit-image==0.26.0
+
+# --- Cau hinh, tien ich ---
+PyYAML==6.0.3
+requests==2.32.5
+tqdm==4.67.3
+websocket-client==1.9.2
+
+# --- Giao dien van hanh ---
+gradio==6.5.1
+fastapi==0.129.0
+
+# --- Do chi so chat luong anh (module benchmark, qa) ---
+torch==2.10.0
+torchvision==0.25.0
+torchmetrics==1.8.2
+torch-fidelity==0.3.0
+
+# --- Kiem thu giao dien (module tests) ---
+playwright==1.58.0
+
+# --- Tuy chon: chi can khi chay module tuong ung ---
+# pycocotools          # post_processing: kiem tra tep COCO
+# ultralytics          # validation: huan luyen va danh gia YOLOv8
+# huggingface_hub      # benchmark: tai mo hinh nen
+# diffusers            # benchmark: nap checkpoint Stable Diffusion
+# safetensors          # benchmark: doc tep LoRA
+# segment-anything     # auto_labeler: phan doan ban tu dong anh that

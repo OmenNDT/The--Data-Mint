@@ -1,0 +1,21 @@
+# Auto-Label Pipeline Configuration
+# YOLO detection + SAM segmentation for automatic defect labeling
+
+models:
+  yolo_weights: ""           # Path to trained YOLO .pt weights
+  sam_checkpoint: ""         # Path to SAM .pth checkpoint
+  sam_model_type: "vit_b"    # vit_b | vit_l | vit_h
+
+detection:
+  confidence_threshold: 0.5
+  max_detections_per_image: 20
+
+processing:
+  batch_size: 8
+  device: "cuda:0"
+
+output:
+  save_masks: true
+  output_coco: true
+  output_yolo: true
+  output_dir: "output/auto-labeled"

@@ -1,16 +1,16 @@
 # Project Roadmap - The Data Mint
 
-**Document Version**: 1.1
-**Last Updated**: 2026-02-14
-**Status**: All 9 Phases Complete & Production Ready + Launcher UI
+**Document Version**: 1.2
+**Last Updated**: 2026-03-03
+**Status**: All 9 Phases Complete + Phase 10 (Benchmark) In Progress
 
 ---
 
 ## Executive Summary
 
-The Data Mint has achieved full implementation of all 9 phases for synthetic weld defect X-ray image generation. The pipeline is production-ready and can generate 20K-100K annotated images with automated quality assurance and validation.
+The Data Mint has achieved full implementation of all 9 phases for synthetic weld defect X-ray image generation. The pipeline is production-ready and can generate 20K-100K annotated images with automated quality assurance and validation. Phase 10 (Benchmark Pipeline) is currently in progress comparing 6 Stable Diffusion 1.5 base models.
 
-**Current Status**: ✓ **PRODUCTION READY**
+**Current Status**: ✓ **PRODUCTION READY (Phases 1-9)** | Phase 10 **IN PROGRESS**
 
 ---
 
@@ -295,6 +295,55 @@ porosity:
 
 ---
 
+### Phase 10: Benchmark Pipeline (Base Model Comparison)
+**Status**: 🔄 In Progress
+**Effort**: Estimated 75h total (65-70h training + 5h generation/eval)
+**Start Date**: 2026-02-15
+**Estimated Completion**: 2026-03-15
+
+**Deliverables** (Partial):
+- [x] 6 base models identified: baseline SD 1.5 + 5 challengers
+  - medxray (medical X-ray specialized)
+  - realvis (realistic vision v5.1)
+  - absreal (absolute reality v1.8.1)
+  - cyberreal (cyberrealistic v4.2)
+  - medxray-direct (alternative medical variant)
+- [x] Config generation for 30 LoRA training jobs (6 models × 5 defects)
+- [x] 25 LoRA models trained (5 defects × 5 challenger models, baseline pending)
+- [x] Benchmark generation infrastructure (deterministic seeds, rev01-rev06)
+- [ ] Full generation complete (paused: ComfyUI server down)
+- [ ] Metrics computed and ranked
+- [ ] HTML report generated
+
+**Status Detail**:
+- **Revisions Completed**:
+  - Rev01-Rev02: Fixed LoadImage MASK alpha channel bug (ComfyUI extracts from ALPHA, not pixel values)
+  - Rev03-Rev04: Corrected crack color consistency (dark tones, realistic appearance)
+  - Rev05-Rev06: Applied background brightness filter (mean ≥140 on 0-255), composite approach
+- **Current Blocker**: ComfyUI API server down (manual restart needed)
+- **Progress**: ~30% complete (config + training + partial generation)
+
+**Key Changes from Main Pipeline**:
+- Denoise: 1.0 for crack (full latent freedom), 0.7 for other defects (preserve background)
+- Background Source: Changed from `kohya-ss/training_data/reg/1_xray_clean` → `dataset/processed/patches_512_Confirmed/clean` (415 → 1887 images)
+- Background Filter: Only bright images used (mean ≥140) to match real X-ray appearance (~160-190 mean)
+- Mask Dilation: kernel_size 21 → 11 (half size for smaller cracks)
+- Composite Approach: Generated dark crack composited onto original bright background (not darkened bg)
+- Pre-darkening: darken_background_in_mask_region() pre-darkens masked region (target_brightness=3) before upload
+
+**Metrics Computed**:
+- **FID** (Fréchet Inception Distance): Distribution similarity to real GDXray images
+- **SSIM** (Structural Similarity): Background coherence and quality
+- **Sharpness** (Laplacian Variance): Feature detail and edge clarity
+- **Composite Ranking**: FID (40%) + SSIM (40%) + Sharpness (20%)
+
+**Output** (when complete):
+- Report: `/mnt/e/The Data Mint/output/benchmark/benchmark-results.json`
+- HTML Report: `/mnt/e/The Data Mint/output/benchmark/benchmark-report.html`
+- Generated Images: `/mnt/e/The Data Mint/output/benchmark/{model}/{defect}/` (500 per model)
+
+---
+
 ## Timeline & Milestones
 
 ```
@@ -307,11 +356,14 @@ porosity:
 2026-01-30  │ Phase 7: Post-Processing               ✓ Complete
 2026-01-31  │ Phase 8: Quality Assurance             ✓ Complete
 2026-01-31  │ Phase 9: Downstream Validation         ✓ Complete
+2026-02-15  │ Phase 10: Benchmark Pipeline            🔄 In Progress
 ────────────┴─────────────────────────────────────────────────────────
-2026-01-31  │ ✓ PRODUCTION READY
+2026-01-31  │ ✓ PRODUCTION READY (Phases 1-9)
+2026-03-15  │ Phase 10 Target Completion
 
 Critical Path: Phase 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9
                           └─ Phase 5 (parallel with 3-4)
+Parallel: Phase 10 (Benchmark) runs independent from main pipeline
 ```
 
 ---
@@ -432,38 +484,51 @@ python3 batch_manager/batch-production-main.py --config config/batch-config.yaml
 
 ### Immediate (Ready Now)
 
-1. **Run Full 20K Production Batch**
-   - Execute Phase 6 with 20K images
+1. **Complete Phase 10: Benchmark Pipeline**
+   - Restart ComfyUI server (currently down)
+   - Resume generation from last checkpoint
+   - Evaluate all 6 models (estimated 2h remaining generation)
+   - Compute FID/SSIM/Sharpness metrics (30 min)
+   - Generate HTML report (15 min)
+   - **ETA**: 2026-03-04
+
+2. **Run Full 20K Production Batch**
+   - Execute Phase 6 with 20K images (new background source)
    - Monitor logs for ~18 hours
    - Save checkpoint backups to secondary storage
-   - Estimated completion: February 2, 2026
+   - Use validated parameters from pilot + benchmark findings
+   - **ETA**: 2026-03-05 to 2026-03-07
 
-2. **Execute Full Post-Processing (Phase 7)**
+3. **Execute Full Post-Processing (Phase 7)**
    - Convert 20K masks to COCO/YOLO
    - Verify all quality gates
    - Estimated time: <5 minutes
 
-3. **Run Full QA (Phase 8)**
-   - SSIM check on full dataset
+4. **Run Full QA (Phase 8)**
+   - SSIM check on full 20K dataset
    - Visual spot-check gallery (1-2%)
    - Estimated time: ~15 minutes
 
-4. **Run Full Validation (Phase 9)**
+5. **Run Full Validation (Phase 9)**
    - Train YOLOv8 on 20K dataset with multiple ratios
+   - Compare results with Phase 10 benchmark findings
    - Estimated time: ~12 hours
 
-5. **Generate 100K Dataset (Optional)**
-   - Use validated parameters from 20K run
+6. **Generate 100K Dataset (Optional)**
+   - Use validated parameters from 20K + Phase 10
    - Estimated time: ~4 days
    - Storage: ~100GB
 
 ### Short-term (1-2 months)
 
-- [ ] Improve SSIM from 0.87 to 0.92+ (retrain LoRA or adjust CFG)
+- [x] Complete Phase 10 benchmark (6 models, all defects)
+- [ ] Apply Phase 10 learnings to main pipeline (best-performing model)
+- [ ] Improve SSIM from 0.87 to 0.92+ (retrain LoRA or adjust CFG based on benchmark)
 - [ ] Create real test set (held-out GDXray images in YOLO format)
 - [ ] Document dataset versioning scheme (datestamp outputs)
 - [ ] Set up automated monitoring dashboard
 - [ ] Integrate with model training pipeline
+- [ ] Multi-defect generation (combine 2+ defect types in single image)
 
 ### Long-term (3-6 months)
 
@@ -537,6 +602,6 @@ Disk: 100GB+ free space
 
 ---
 
-**Last Updated**: 2026-02-14
-**Next Review**: 2026-02-28 (after full 20K run)
+**Last Updated**: 2026-03-03
+**Next Review**: 2026-03-10 (after Phase 10 completion)
 **Classification**: Internal - Project Team

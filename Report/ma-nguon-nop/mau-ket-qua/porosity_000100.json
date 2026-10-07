@@ -1,0 +1,8 @@
+{
+  "job_id": 100,
+  "defect_type": "porosity",
+  "seed": 3910215625,
+  "background_image": "/home/sontn/Projects/The Data Mint/dataset/processed/patches_512_Confimed/clean/clean_W0003_0023_00256_00000.png",
+  "resolution": 512,
+  "timestamp": "2026-03-15 17:17:49"
+}

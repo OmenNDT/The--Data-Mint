@@ -1,0 +1,47 @@
+comfyui:
+  host: 192.168.2.9
+  port: 8188
+  prompts_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/benchmark/defect-type-prompt-templates-realvis.yaml
+  workflow_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/sd15-lora-controlnet-inpaint-single-defect-workflow.json
+generation:
+  defect_distribution:
+    crack: 0.2
+    porosity: 0.2
+    inclusion: 0.2
+    lack_of_fusion: 0.2
+    undercut: 0.2
+  resolution: 512
+  total_images: 500
+lora_models:
+  crack: xray_crack_realvis_lora_r32.safetensors
+  porosity: xray_porosity_realvis_lora_r32.safetensors
+  inclusion: xray_inclusion_realvis_lora_r32.safetensors
+  lack_of_fusion: xray_lof_realvis_lora_r32.safetensors
+  undercut: xray_undercut_realvis_lora_r32.safetensors
+output:
+  organize_by_defect: true
+  save_masks: true
+  save_metadata: true
+paths:
+  backgrounds_dir: /home/sontn/Projects/The Data Mint/dataset/processed/patches_512_Confimed/clean
+  checkpoint_dir: /home/sontn/Projects/The Data Mint/pipeline/checkpoints
+  logs_dir: /home/sontn/Projects/The Data Mint/pipeline/logs
+  output_base_dir: /home/sontn/Projects/The Data Mint/output/benchmark/realvis
+performance:
+  mask_prefetch_count: 50
+  mask_prefetch_workers: 8
+reliability:
+  checkpoint_interval: 100
+  max_retries: 3
+  retry_delay_seconds: 5
+  timeout_seconds: 300
+sampler:
+  cfg: 10.0
+  name: euler
+  scheduler: normal
+  steps: 20
+thermal:
+  check_interval_seconds: 30
+  enabled: true
+  max_temp_celsius: 85
+  resume_temp_celsius: 75

@@ -4,12 +4,13 @@ A complete end-to-end pipeline for generating 20K-100K annotated synthetic X-ray
 
 ## Quick Facts
 
-- **Status**: Production Ready (All 9 phases complete)
+- **Status**: Production Ready (Phases 1-9) + Phase 10 In Progress
 - **Output**: 20,000-100,000 synthetic weld defect X-ray images with COCO + YOLO annotations
 - **Defect Types**: 5 (crack, porosity, inclusion, lack of fusion, undercut)
 - **Throughput**: ~1,097 images/hour (20K in ~18 hours, 100K in ~4 days)
 - **Hardware**: Dual Xeon E5-2696v4 (44c/88t) + RTX 3090 24GB + 64GB ECC RAM
-- **Tech Stack**: SD 1.5 + LoRA (kohya-ss) + ControlNet v1.1 + ComfyUI API + Python orchestration
+- **Tech Stack**: SD 1.5 + LoRA (kohya-ss) + VAEEncode + SetLatentNoiseMask + ComfyUI API + Python orchestration
+- **Benchmark**: 6 base models (baseline + 5 challengers) being compared with deterministic test suite
 
 ## Architecture Overview
 
@@ -69,6 +70,13 @@ Then open your browser to `http://localhost:7860`
 - Click "Start" → monitor progress in real-time
 - Temperature, throughput graphs, error alerts
 - Download COCO/YOLO datasets after completion
+
+**Current Updates** (2026-03-03):
+- Workflow redesigned: VAEEncode + SetLatentNoiseMask (replaced ControlNet)
+- Denoise: 1.0 for crack, 0.7 for other defects (preserve background)
+- Background filtering: Only bright images (mean ≥140) used to match real X-ray appearance
+- Composite approach: Generated dark crack blended onto original bright background
+- Benchmark pipeline: 6 models being tested (baseline + 5 challengers)
 
 ### Run the Pipeline
 

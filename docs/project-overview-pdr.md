@@ -1,8 +1,8 @@
 # The Data Mint - Project Overview & Product Development Requirements (PDR)
 
-**Document Version**: 1.1
-**Status**: Production Ready
-**Last Updated**: 2026-02-14
+**Document Version**: 1.2
+**Status**: Production Ready (Phases 1-9) + Phase 10 In Progress
+**Last Updated**: 2026-03-03
 **Priority**: P1 (Critical for model training)
 
 ---
@@ -21,7 +21,7 @@ The Data Mint is an end-to-end synthetic data generation pipeline that produces 
 
 | ID | Requirement | Phase | Status |
 |----|----|----|----|
-| FR-1 | Generate 20K-100K synthetic X-ray images with 5 defect types | 1-6 | ✓ Complete |
+| FR-1 | Generate 20K-100K synthetic X-ray images with 5 defect types | 1-6, 10 | ✓ Complete (Phase 1-6) |
 | FR-2 | Support 5 independent defect types (crack, porosity, inclusion, LOF, undercut) | 3, 5 | ✓ Complete |
 | FR-3 | Export annotations in COCO JSON format with bboxes + segmentation | 7 | ✓ Complete |
 | FR-4 | Export annotations in YOLO TXT format for Ultralytics compatibility | 7 | ✓ Complete |
@@ -55,6 +55,7 @@ The Data Mint is an end-to-end synthetic data generation pipeline that produces 
 - Automated annotation export (Phase 7)
 - Quality assurance validation (Phase 8)
 - Downstream YOLOv8 testing (Phase 9)
+- Benchmark model comparison (Phase 10 - comparing 6 base models)
 - One-click Gradio launcher UI with phase management
 - Configuration management and monitoring
 - Error recovery and checkpointing
@@ -66,6 +67,7 @@ The Data Mint is an end-to-end synthetic data generation pipeline that produces 
 - Deployment to production environments
 - Multi-GPU scaling (single RTX 3090)
 - Custom ControlNet architectures
+- Multi-defect generation (future enhancement)
 
 ---
 
@@ -94,8 +96,10 @@ The Data Mint is an end-to-end synthetic data generation pipeline that produces 
 | Learning Rate | 1e-4 |
 | Epochs | 10 |
 | Batch Size | 4 |
-| Training Time | ~2-3 hours per LoRA |
+| Training Time | ~2-3 hours per LoRA (baseline), ~2-4h per LoRA (6 models) |
 | Final Model Size | ~37 MB per LoRA |
+| Benchmark Models | 6 total: baseline SD 1.5 + 5 challengers (medxray, realvis, absreal, cyberreal, medxray-direct) |
+| Benchmark LoRAs | 25 total (5 defects × 5 challengers) |
 
 ### ComfyUI Workflow (Phase 4)
 
@@ -104,7 +108,14 @@ The Data Mint is an end-to-end synthetic data generation pipeline that produces 
 - Steps: 20 per image
 - CFG Scale: 7.0 (quality vs. diversity)
 - LoRA Strength: 0.7 per defect
-- ControlNet Strength: 0.8 (inpainting precision)
+- VAEEncode + SetLatentNoiseMask: Replaced ControlNet inpainting (more stable)
+- Denoise: 1.0 for crack (full latent freedom), 0.7 for other defects (preserve background)
+- Background Filter: Only bright images (mean ≥140 on 0-255 scale) used to match real X-ray appearance
+- Composite Approach: Generated dark crack composited onto original bright background
+
+**Post-Generation**:
+- darken_background_in_mask_region(): Pre-darkens masked region (target_brightness=3) before upload
+- Composite blending for realistic integration
 
 **Output**:
 - Image + binary mask + metadata JSON per generation
@@ -333,16 +344,49 @@ Phase 9: Downstream Validation (YOLOv8 training + mAP test)
 
 ---
 
+## Benchmark Phase (Phase 10) - New Addition
+
+**Purpose**: Compare 6 Stable Diffusion 1.5 base models to identify best-performing variant for LoRA fine-tuning.
+
+**Models**:
+1. Baseline SD 1.5 (official)
+2. MedXRay (medical X-ray specialized)
+3. Realistic Vision v5.1 (photorealism optimized)
+4. Absolute Reality v1.8.1 (balanced quality)
+5. CyberRealistic v4.2 (stylized aesthetic)
+6. MedXRay Direct (alternative medical variant)
+
+**Metrics**:
+- FID (Fréchet Inception Distance) — distribution similarity
+- SSIM (Structural Similarity) — background coherence
+- Sharpness (Laplacian Variance) — feature detail
+- Composite Ranking: FID (40%) + SSIM (40%) + Sharpness (20%)
+
+**Status**:
+- LoRA training: Complete (25 models for 5 challengers)
+- Generation: In Progress (Rev01-Rev06 completed, awaiting ComfyUI restart)
+- Evaluation: Pending
+- Report: Pending
+
+**Key Workflow Changes from Main Pipeline**:
+- VAEEncode + SetLatentNoiseMask (replaced ControlNet)
+- Denoise: 1.0 for crack, 0.7 for other defects
+- Background filter: mean ≥140 brightness
+- Composite blending: dark crack on bright background
+- Mask dilation: kernel_size 11 for smaller cracks
+
+---
+
 ## Approval & Sign-Off
 
 | Role | Name | Date | Signature |
 |------|------|------|-----------|
-| Project Lead | [TBD] | 2026-02-14 | [TBD] |
-| Tech Lead | [TBD] | 2026-02-14 | [TBD] |
-| QA Lead | [TBD] | 2026-02-14 | [TBD] |
+| Project Lead | [TBD] | 2026-03-03 | [TBD] |
+| Tech Lead | [TBD] | 2026-03-03 | [TBD] |
+| QA Lead | [TBD] | 2026-03-03 | [TBD] |
 
 ---
 
 **Document Classification**: Internal
 **Distribution**: Development Team, Stakeholders
-**Next Review**: 2026-06-30
+**Next Review**: 2026-03-31 (after Phase 10 completion)

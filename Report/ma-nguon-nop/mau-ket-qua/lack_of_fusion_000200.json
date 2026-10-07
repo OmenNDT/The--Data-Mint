@@ -1,0 +1,8 @@
+{
+  "job_id": 200,
+  "defect_type": "lack_of_fusion",
+  "seed": 574770204,
+  "background_image": "/home/sontn/Projects/The Data Mint/dataset/processed/patches_512_Confimed/clean/clean_W0003_0038_03072_00512.png",
+  "resolution": 512,
+  "timestamp": "2026-03-15 18:14:00"
+}

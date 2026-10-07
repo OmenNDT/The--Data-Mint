@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batch Production Pipeline — Data Flow</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --border:#30363d;
+    --text:#c9d1d9; --muted:#8b949e; --wire:#484f58;
+    --cfg:#58a6ff; --proc:#3fb950; --net:#d29922; --out:#f778ba;
+    --in:#7ee787; --code:#7ee787;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 24px;background:var(--bg);color:var(--text);
+    font-family:"Segoe UI",system-ui,sans-serif;line-height:1.45}
+  h1{font-size:21px;margin:0 0 4px;color:#fff}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:26px}
+  code{font-family:"JetBrains Mono",monospace;color:var(--code);font-size:12px}
+
+  .graph{display:flex;flex-direction:column;align-items:center;gap:0}
+
+  /* connector */
+  .wire{width:2px;background:var(--wire);position:relative}
+  .wire.short{height:22px}
+  .wire.lbl{height:46px}
+  .wire .tag{
+    position:absolute;left:14px;top:50%;transform:translateY(-50%);
+    white-space:nowrap;font-family:monospace;font-size:11px;color:var(--in);
+    background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:2px 8px}
+  .wire::after{content:"▼";position:absolute;bottom:-9px;left:50%;
+    transform:translateX(-50%);color:var(--wire);font-size:12px}
+
+  /* generic block */
+  .blk{width:640px;max-width:92vw;border:1px solid var(--border);border-radius:10px;
+    background:var(--panel);padding:0;overflow:hidden}
+  .blk .head{padding:11px 16px;font-weight:700;color:#fff;font-size:14px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .blk .head .loc{font-family:monospace;font-size:10.5px;color:var(--muted);font-weight:400}
+  .blk .body{padding:12px 16px;border-top:1px solid var(--border);font-size:12.5px}
+  .io{display:grid;grid-template-columns:52px 1fr;gap:6px 10px;align-items:start}
+  .io .k{font-family:monospace;font-size:11px;text-align:right;padding-top:1px}
+  .io .k.in{color:var(--in)} .io .k.out{color:var(--out)}
+  .io .v{color:var(--text)} .io .v small{color:var(--muted);font-size:11px}
+  .io .v code{font-size:11.5px}
+
+  .blk.cfg{border-color:var(--cfg)} .blk.cfg .head{background:rgba(88,166,255,.12)}
+  .blk.proc{border-color:var(--proc)} .blk.proc .head{background:rgba(63,185,80,.12)}
+  .blk.net{border-color:var(--net)} .blk.net .head{background:rgba(210,153,34,.12)}
+  .blk.out{border-color:var(--out)} .blk.out .head{background:rgba(247,120,186,.12)}
+
+  .badge{font-family:monospace;font-size:10px;padding:2px 7px;border-radius:4px;
+    border:1px solid currentColor}
+  .badge.http{color:var(--net)}
+  .badge.loop{color:var(--proc)}
+
+  /* store (config source) */
+  .store{width:640px;max-width:92vw;border:1px dashed var(--cfg);border-radius:10px;
+    background:#12203a;padding:12px 16px}
+  .store b{color:#fff}
+  .store .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-top:8px;
+    font-family:monospace;font-size:11.5px;color:var(--text)}
+  .store .grid span{color:var(--muted)}
+
+  /* the big build-workflow node list */
+  .nodes{margin:8px 0 0;border:1px solid #21262d;border-radius:7px;overflow:hidden}
+  .nodes .r{display:grid;grid-template-columns:70px 1fr;font-family:monospace;font-size:11.5px}
+  .nodes .r>div{padding:4px 10px;border-bottom:1px dashed #21262d}
+  .nodes .r:last-child>div{border-bottom:none}
+  .nodes .r .n{color:var(--proc);font-weight:700;background:#0d1117}
+  .nodes .r .s{color:var(--muted)}
+  .nodes .r .s em{color:var(--text);font-style:normal}
+
+  .split{display:flex;gap:18px;align-items:flex-start;justify-content:center;width:640px;max-width:92vw}
+  .split .half{flex:1}
+
+  .result{width:640px;max-width:92vw;font-family:monospace;font-size:12px;
+    background:#0d1117;border:1px solid var(--out);border-radius:10px;padding:14px 16px;
+    white-space:pre;overflow-x:auto}
+  .result .d{color:var(--out)} .result .p{color:var(--code)}
+
+  .loopnote{width:640px;max-width:92vw;text-align:center;color:var(--muted);
+    font-size:11.5px;border:1px dashed var(--proc);border-radius:8px;padding:6px;margin:4px 0}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:26px auto 0;width:640px;max-width:92vw;font-size:12px}
+  .legend span{display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<h1>Batch Production Pipeline — Luồng dữ liệu liền mạch</h1>
+<div class="sub">Mỗi khối: <b style="color:var(--in)">IN</b> = đầu vào · <b style="color:var(--out)">OUT</b> = đầu ra. Mũi tên = dữ liệu chảy sang khối kế.</div>
+
+<div class="graph">
+
+  <!-- CONFIG SOURCE -->
+  <div class="store">
+    <b>📄 batch-config.yaml</b> — nguồn cấu hình
+    <div class="grid">
+      <div>host:port <span>10.86.201.250:8188</span></div>
+      <div>total_images <span>1000</span></div>
+      <div>workflow_path <span>.json</span></div>
+      <div>prompts_path <span>.yaml</span></div>
+      <div>backgrounds_dir <span>.../clean</span></div>
+      <div>output_base_dir <span>output/synthetic</span></div>
+    </div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">config (dict)</span></div>
+
+  <!-- SCHEDULER INIT -->
+  <div class="blk cfg">
+    <div class="head"><span>BatchJobScheduler( config )  — khởi tạo</span><span class="loc">scheduler.py:18</span></div>
+    <div class="body">
+      <div class="io">
+        <div class="k in">IN</div><div class="v">config dict</div>
+        <div class="k out">OUT</div><div class="v">
+          <code>workflow_template</code> <small>(JSON node "1".."12")</small><br>
+          <code>prompts_config</code> <small>(positive/negative/lora mỗi defect)</small><br>
+          <code>background_images[]</code> <small>(glob *.png/*.jpg)</small><br>
+          <code>self.jobs[0..999]</code> <small>(mỗi job = job_id, defect_type, seed, bg — đã shuffle)</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">self.jobs[] sẵn sàng</span></div>
+
+  <!-- LOOP START -->
+  <div class="loopnote">╭─ VÒNG LẶP: lặp lại toàn bộ khối dưới cho từng job (× số job chưa xong) ─╮</div>
+
+  <!-- get_next_job -->
+  <div class="blk proc">
+    <div class="head"><span>get_next_job()</span><span class="loc">main.py:227 · scheduler.py:78</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">self.jobs[] + current_index</div>
+      <div class="k out">OUT</div><div class="v"><code>job</code> = {job_id, defect_type, seed, background_image} <small>· None ⇒ thoát vòng lặp</small></div>
+    </div></div>
+  </div>
+
+  <div class="wire short"></div>
+
+  <!-- generate mask -->
+  <div class="blk proc">
+    <div class="head"><span>_generate_mask_worker( defect_type, seed, resolution, bg )</span><span class="loc">main.py:254</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">job.defect_type · job.seed · job.background_image</div>
+      <div class="k out">OUT</div><div class="v">
+        <code>annotation_mask_path</code> <small>(thin — ground truth)</small><br>
+        <code>inpaint_mask_path</code> <small>(dilated — cho ComfyUI)</small>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="wire short"></div>
+
+  <!-- upload -->
+  <div class="blk net">
+    <div class="head"><span>upload_image( bg ) · upload_image( inpaint_mask ) <span class="badge http">POST /upload/image</span></span><span class="loc">main.py:266,269 · client.py:32</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">file ảnh nền + file inpaint mask (local)</div>
+      <div class="k out">OUT</div><div class="v"><code>bg_filename</code> · <code>mask_filename</code> <small>(tên file trên server ComfyUI)</small></div>
+    </div></div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">job + bg_filename + mask_filename</span></div>
+
+  <!-- BUILD WORKFLOW (star) -->
+  <div class="blk proc" style="border-width:2px">
+    <div class="head"><span>⭐ build_workflow( job, bg_filename, mask_filename )</span><span class="loc">main.py:272 · scheduler.py:92</span></div>
+    <div class="body">
+      <div class="io">
+        <div class="k in">IN</div><div class="v">
+          <code>job</code> (defect_type, seed) · <code>bg_filename</code> · <code>mask_filename</code><br>
+          + <code>workflow_template</code> + <code>prompts_config[defect]</code> (từ khối init)
+        </div>
+      </div>
+      <div class="nodes">
+        <div class="r"><div class="n">node 1</div><div class="s">ckpt_name <em>← model</em></div></div>
+        <div class="r"><div class="n">node 2</div><div class="s">lora_name / strength <em>← prompts_config[defect]</em></div></div>
+        <div class="r"><div class="n">node 3</div><div class="s">text positive <em>← prompts_config[defect]</em></div></div>
+        <div class="r"><div class="n">node 4</div><div class="s">text negative <em>← prompts_config[defect]</em></div></div>
+        <div class="r"><div class="n">node 5</div><div class="s">image <em>← bg_filename</em></div></div>
+        <div class="r"><div class="n">node 6</div><div class="s">image <em>← mask_filename</em></div></div>
+        <div class="r"><div class="n">node 10</div><div class="s">seed / steps / cfg <em>← job.seed + sampler</em></div></div>
+        <div class="r"><div class="n">node 12</div><div class="s">filename_prefix <em>← defect_jobid</em></div></div>
+      </div>
+      <div class="io" style="margin-top:10px">
+        <div class="k out">OUT</div><div class="v"><code>workflow</code> = JSON hoàn chỉnh (deep-copy template đã điền)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">workflow (JSON)</span></div>
+
+  <!-- queue -->
+  <div class="blk net">
+    <div class="head"><span>queue_prompt( workflow ) <span class="badge http">POST /prompt</span></span><span class="loc">main.py:275 · client.py:60</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">workflow JSON</div>
+      <div class="k out">OUT</div><div class="v"><code>prompt_id</code> <small>(ComfyUI nhận, đẩy vào queue — chưa render)</small></div>
+    </div></div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">prompt_id</span></div>
+
+  <!-- poll -->
+  <div class="blk net">
+    <div class="head"><span>poll_completion( prompt_id ) <span class="badge loop">lặp 1s</span> <span class="badge http">GET /history/{id}</span></span><span class="loc">main.py:278 · client.py:91</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">prompt_id</div>
+      <div class="k out">OUT</div><div class="v"><code>history</code> (có "outputs") ⇒ <code>server_filename</code> <small>· GPU render trong lúc chờ · timeout 300s</small></div>
+    </div></div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">server_filename</span></div>
+
+  <!-- get_output_path + download -->
+  <div class="blk out">
+    <div class="head"><span>get_output_path( job )  →  download_output( server_filename, path ) <span class="badge http">GET /view</span></span><span class="loc">main.py:299,300 · client.py:133</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">server_filename · job (defect_type, job_id) · output_base_dir</div>
+      <div class="k out">OUT</div><div class="v">ghi file PNG về <code>output/synthetic/&lt;defect&gt;/&lt;defect&gt;_&lt;jobid:06d&gt;.png</code></div>
+    </div></div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">output_path (PNG đã tải về)</span></div>
+
+  <!-- post-process split -->
+  <div class="blk out">
+    <div class="head"><span>apply_dark_defect_convention()  +  lưu phụ trợ</span><span class="loc">main.py:303,311,315,326</span></div>
+    <div class="body"><div class="io">
+      <div class="k in">IN</div><div class="v">output_path · annotation_mask_path · background_image</div>
+      <div class="k out">OUT</div><div class="v">
+        PNG đã darken (void = dark, RT convention)<br>
+        <code>_mask.png</code> <small>(nếu save_masks)</small> · <code>.json</code> <small>(nếu save_metadata)</small> · checkpoint mỗi 100 ảnh
+      </div>
+    </div></div>
+  </div>
+
+  <div class="wire lbl"><span class="tag">mark_complete → current_index++ ↺ quay lại get_next_job()</span></div>
+
+  <div class="loopnote">╰─ hết job ⇒ thoát vòng lặp ⇒ report tổng kết ─╯</div>
+
+  <div class="wire short"></div>
+
+  <!-- RESULT -->
+  <div class="result">📁 KẾT QUẢ  →  <span class="d">output/synthetic/</span>
+├── <span class="d">crack/</span>
+│   ├── <span class="p">crack_000007.png</span>        ← ComfyUI render + darken
+│   ├── <span class="p">crack_000007_mask.png</span>   ← ground-truth mask
+│   └── <span class="p">crack_000007.json</span>       ← metadata (seed, bg, resolution)
+├── <span class="d">porosity/</span> · <span class="d">lack_of_fusion/</span> · … (10 defect types)</div>
+
+</div>
+
+<div class="legend">
+  <span><i class="dot" style="background:var(--cfg)"></i> Cấu hình / khởi tạo</span>
+  <span><i class="dot" style="background:var(--proc)"></i> Xử lý phía client</span>
+  <span><i class="dot" style="background:var(--net)"></i> Gọi ComfyUI (HTTP)</span>
+  <span><i class="dot" style="background:var(--out)"></i> Output / lưu file</span>
+  <span><i class="dot" style="background:var(--in)"></i> Nhãn dữ liệu trên mũi tên</span>
+</div>
+
+<!-- ============ HƯỚNG DẪN CHẠY BẰNG LỆNH ============ -->
+<style>
+  .runguide{max-width:900px;margin:36px auto 0;border-top:1px solid var(--border);padding-top:24px}
+  .runguide h2{color:#fff;font-size:18px;margin:0 0 4px}
+  .runguide .note{color:var(--muted);font-size:12.5px;margin-bottom:18px;line-height:1.5}
+  .runguide .ex{border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-bottom:14px;overflow:hidden}
+  .runguide .ex-h{padding:10px 14px;font-weight:700;color:#fff;font-size:13.5px;background:rgba(63,185,80,.12);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;align-items:center}
+  .runguide .ex-h .tag{font-family:monospace;font-size:10.5px;color:var(--muted);font-weight:400}
+  .runguide .ex-b{padding:12px 14px}
+  .runguide .ex-b .desc{color:var(--muted);font-size:12px;margin-bottom:8px;line-height:1.5}
+  .runguide pre{margin:0;background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:12px 14px;overflow-x:auto}
+  .runguide code{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--code);white-space:pre;line-height:1.6}
+  .runguide .cmt{color:var(--muted)}
+  .runguide .warn{border:1px dashed var(--net);border-radius:8px;padding:10px 14px;color:var(--text);font-size:12px;background:rgba(210,153,34,.08);margin-top:6px;line-height:1.55}
+</style>
+<div class="runguide">
+  <h2>▶ Chạy bằng lệnh (CLI)</h2>
+  <div class="note">
+    Entry point: <code style="color:var(--code)">pipeline/batch_manager/batch-production-main.py</code> — đọc mọi thứ (ảnh nền, LoRA, ComfyUI host, defect_distribution) từ file <code style="color:var(--code)">--config &lt;yaml&gt;</code>.
+    Đọc <code style="color:var(--code)">defect_distribution</code> để dựng job list → sinh ảnh vào <code style="color:var(--code)">paths.output_base_dir</code>. Chạy từ thư mục <code style="color:var(--code)">pipeline/</code> với venv của nó.
+  </div>
+
+  <!-- Ví dụ 1 -->
+  <div class="ex">
+    <div class="ex-h"><span>① Chạy pilot (nhanh) với config mặc định</span><span class="tag">--pilot</span></div>
+    <div class="ex-b">
+      <div class="desc">Sinh 1 ảnh / mỗi defect có tỉ lệ &gt;0 trong config — kiểm tra nhanh pipeline chạy được.</div>
+      <pre><code>cd "/home/sontn/Projects/The Data Mint/pipeline"
+source .venv/bin/activate
+python batch_manager/batch-production-main.py \
+  --config config/batch-config.yaml --pilot</code></pre>
+    </div>
+  </div>
+
+  <!-- Ví dụ 2 -->
+  <div class="ex">
+    <div class="ex-h"><span>② Sinh N ảnh 1 loại khuyết tật (config tạm)</span><span class="tag">defect_distribution = {undercut: 1.0}</span></div>
+    <div class="ex-b">
+      <div class="desc">Clone config, ép chỉ 1 defect + số lượng + output riêng, rồi trỏ <code>--config</code> vào file tạm. Ví dụ: 100 ảnh undercut.</div>
+      <pre><code><span class="cmt"># tạo config tạm</span>
+python - &lt;&lt;'PY'
+import yaml, os
+cfg = yaml.safe_load(open('config/batch-config.yaml'))
+cfg['generation']['total_images'] = 100
+cfg['generation']['defect_distribution'] = {'undercut': 1.0}
+base = '/home/sontn/Projects/The Data Mint/output/test-undercut'
+cfg['paths']['output_base_dir'] = base
+cfg['paths']['checkpoint_dir'] = base + '/_ckpt'
+cfg['paths']['logs_dir']       = base + '/_logs'
+os.makedirs('config/_generated', exist_ok=True)
+yaml.safe_dump(cfg, open('config/_generated/undercut-100.yaml','w'), allow_unicode=True)
+PY
+<span class="cmt"># chạy</span>
+python batch_manager/batch-production-main.py \
+  --config config/_generated/undercut-100.yaml</code></pre>
+    </div>
+  </div>
+
+  <!-- Ví dụ 3 -->
+  <div class="ex">
+    <div class="ex-h"><span>③ Batch dài chạy nền qua systemd-run</span><span class="tag">bền — không bị kill</span></div>
+    <div class="ex-b">
+      <div class="desc">Job dài (hàng trăm ảnh) nên chạy như systemd transient unit để tách khỏi terminal — không chết khi đóng shell. Theo dõi bằng đếm PNG + <code>journalctl</code>.</div>
+      <pre><code>systemd-run --user --unit=tdm-loswf500 \
+  --working-directory="/home/sontn/Projects/The Data Mint/pipeline" \
+  "/home/sontn/Projects/The Data Mint/pipeline/.venv/bin/python" \
+  batch_manager/batch-production-main.py \
+  --config config/_generated/loswf-500.yaml
+
+<span class="cmt"># theo dõi</span>
+journalctl --user -u tdm-loswf500.service -f
+ls output/test-loswf-500/*/*.png | grep -v mask | wc -l   <span class="cmt"># đếm ảnh</span>
+systemctl --user is-active tdm-loswf500.service            <span class="cmt"># còn chạy?</span>
+
+<span class="cmt"># xong thì dọn unit</span>
+systemctl --user reset-failed tdm-loswf500.service</code></pre>
+    </div>
+  </div>
+
+  <div class="warn">
+    ⚠ <b>Tùy chọn CLI:</b> <code style="color:var(--code)">--config &lt;path&gt;</code> (bắt buộc) ·
+    <code style="color:var(--code)">--pilot</code> (1 ảnh/defect) ·
+    <code style="color:var(--code)">--resume</code> (tiếp tục từ checkpoint không hỏi).
+    ComfyUI server phải sống tại host trong config (mặc định <code style="color:var(--code)">10.86.201.250:8188</code>) trước khi chạy.
+  </div>
+</div>
+</body>
+</html>
