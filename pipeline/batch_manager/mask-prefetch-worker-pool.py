@@ -16,35 +16,52 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def _generate_mask_worker(defect_type: str, seed: int, resolution: int) -> str:
+def _generate_mask_worker(
+    defect_type: str, seed: int, resolution: int, dilation_config: dict = None
+) -> dict:
     """
     Worker function for parallel mask generation.
-    Runs in separate process, returns temp file path.
+    Runs in separate process, returns paths to both annotation and inpainting masks.
 
     Args:
         defect_type: One of: crack, porosity, inclusion, lack_of_fusion, undercut
         seed: Random seed for reproducibility
         resolution: Mask size (width and height)
+        dilation_config: Optional dict with keys: kernel_size, kernel_shape, feather_blur_radius
 
     Returns:
-        Path to temporary mask file
+        Dict with "annotation_path" (thin original) and "inpaint_path" (dilated for inpainting)
     """
     # Lazy import to avoid NumPy version issues at module load time
     from mask_generator import (
         CrackMaskGenerator,
         PorosityMaskGenerator,
+        ClusteredPorosityMaskGenerator,
         LackOfFusionMaskGenerator,
+        LackOfPenetrationMaskGenerator,
         SlagInclusionMaskGenerator,
-        UndercutMaskGenerator
+        LinearSlagInclusionMaskGenerator,
+        MetallicInclusionMaskGenerator,
+        UndercutMaskGenerator,
+        LinearPorosityMaskGenerator,
+        ElongatedCavityMaskGenerator,
+        dilate_mask_for_inpainting,
     )
 
     # Map defect types to generator classes
     generators = {
         "crack": CrackMaskGenerator,
         "porosity": PorosityMaskGenerator,
-        "inclusion": SlagInclusionMaskGenerator,
+        "clustered_porosity": ClusteredPorosityMaskGenerator,
+        "linear_porosity": LinearPorosityMaskGenerator,
         "lack_of_fusion": LackOfFusionMaskGenerator,
-        "undercut": UndercutMaskGenerator
+        "lack_of_penetration": LackOfPenetrationMaskGenerator,
+        "slag_inclusion": SlagInclusionMaskGenerator,
+        "linear_slag_inclusion": LinearSlagInclusionMaskGenerator,
+        "metallic_inclusion": MetallicInclusionMaskGenerator,
+        "elongated_cavity": ElongatedCavityMaskGenerator,
+        "undercut": UndercutMaskGenerator,
+        "inclusion": SlagInclusionMaskGenerator,  # legacy alias
     }
 
     if defect_type not in generators:
@@ -58,35 +75,54 @@ def _generate_mask_worker(defect_type: str, seed: int, resolution: int) -> str:
     )
     binary_mask, feathered_mask = generator.generate()
 
-    # Save feathered mask to temp file (used for inpainting)
-    temp_file = tempfile.NamedTemporaryFile(
-        suffix=".png",
-        delete=False,
-        dir=tempfile.gettempdir()
+    # Save original thin mask (annotation ground truth)
+    annotation_file = tempfile.NamedTemporaryFile(
+        suffix="_annotation.png", delete=False, dir=tempfile.gettempdir()
     )
-    temp_path = temp_file.name
-    temp_file.close()
+    annotation_path = annotation_file.name
+    annotation_file.close()
+    Image.fromarray(binary_mask, mode="L").save(annotation_path, format="PNG")
 
-    # Convert to PIL and save
-    mask_image = Image.fromarray(feathered_mask, mode="L")
-    mask_image.save(temp_path, format="PNG")
+    # Create inpainting mask: dilated if config provided, otherwise use feathered
+    if dilation_config and dilation_config.get("enabled", False):
+        inpaint_mask = dilate_mask_for_inpainting(
+            binary_mask,
+            kernel_size=dilation_config.get("kernel_size", 21),
+            kernel_shape=dilation_config.get("kernel_shape", "ellipse"),
+            feather_blur_radius=dilation_config.get("feather_blur_radius", 7),
+        )
+    else:
+        inpaint_mask = feathered_mask
 
-    return temp_path
+    inpaint_file = tempfile.NamedTemporaryFile(
+        suffix="_inpaint.png", delete=False, dir=tempfile.gettempdir()
+    )
+    inpaint_path = inpaint_file.name
+    inpaint_file.close()
+    Image.fromarray(inpaint_mask, mode="L").save(inpaint_path, format="PNG")
+
+    return {"annotation_path": annotation_path, "inpaint_path": inpaint_path}
 
 
 class MaskPrefetcher:
     """Pre-generates masks using CPU worker pool."""
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, mask_config: Dict = None):
         """
         Initialize mask prefetcher.
 
         Args:
             config: Batch configuration dict
+            mask_config: Optional mask-config.yaml dict with dilation settings
         """
         self.config = config
         self.resolution = config["generation"]["resolution"]
         self.worker_count = config["performance"]["mask_prefetch_workers"]
+
+        # Dilation config from mask-config.yaml
+        self.dilation_config = None
+        if mask_config and "inpaint_dilation" in mask_config:
+            self.dilation_config = mask_config["inpaint_dilation"]
 
         # Create process pool
         self.executor = ProcessPoolExecutor(max_workers=self.worker_count)
@@ -110,7 +146,8 @@ class MaskPrefetcher:
             _generate_mask_worker,
             defect_type,
             seed,
-            self.resolution
+            self.resolution,
+            self.dilation_config,
         )
 
         self.pending_futures.append({
@@ -119,15 +156,14 @@ class MaskPrefetcher:
             "seed": seed
         })
 
-    def get_next_mask(self) -> Optional[str]:
+    def get_next_mask(self) -> Optional[dict]:
         """
-        Get next completed mask from buffer.
+        Get next completed mask pair from buffer.
         Blocks until a mask is ready if buffer is empty.
 
         Returns:
-            Path to mask file or None if no pending futures
+            Dict with "annotation_path" and "inpaint_path", or None
         """
-        # Wait for at least one future to complete
         if not self.pending_futures:
             return None
 
@@ -136,9 +172,9 @@ class MaskPrefetcher:
         future = pending["future"]
 
         # Wait for completion (blocks)
-        mask_path = future.result()
+        mask_result = future.result()
 
-        return mask_path
+        return mask_result
 
     def prefill_buffer(self, jobs: list):
         """

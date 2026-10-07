@@ -7,44 +7,37 @@ import gradio as gr
 from typing import Any, Dict, Optional
 
 from .ui_icons import icon
+from .pipeline_orchestrator import PHASE_DEFINITIONS
+
+# Short labels for the stepper (same 9 phases as PHASE_DEFINITIONS, phase_id 1-9)
+PHASE_SHORT_LABELS = {
+    1: "Thiết lập", 2: "Tiền xử lý", 3: "LoRA", 4: "Workflow", 5: "Mask",
+    6: "Tạo ảnh", 7: "Hậu xử lý", 8: "QA", 9: "Đánh giá",
+}
 
 
-# =============================================================================
-# PHASE DEFINITIONS
-# =============================================================================
-PHASES = [
-    ("1", "Chuẩn bị"),
-    ("2", "Phân tích"),
-    ("3", "Config"),
-    ("4", "Tạo ảnh"),
-    ("5", "Hậu xử lý"),
-    ("6", "QA"),
-    ("7", "Đánh giá"),
-    ("8", "Training"),
-    ("9", "Hoàn thành"),
-]
-
-
-def create_phase_stepper_html(current_phase: int = 0) -> str:
-    """Create HTML phase stepper for 9 pipeline phases.
+def create_phase_stepper_html(current_phase_id: int = 0) -> str:
+    """Create HTML phase stepper for the 9 pipeline phases (ids 1-9, matching
+    PHASE_DEFINITIONS in pipeline_orchestrator.py — NOT an arbitrary 1-9 index).
 
     Args:
-        current_phase: Current phase index (0-8, -1 = not started)
+        current_phase_id: The phase_id (1-9) currently running; 0/-1 = not started.
 
     Returns:
         HTML string for phase stepper
     """
     html = '<div class="dm-phase-stepper">'
-    for i, (num, label) in enumerate(PHASES):
+    for phase_id in sorted(PHASE_DEFINITIONS.keys()):
         status = ""
-        if i < current_phase:
+        if phase_id < current_phase_id:
             status = "completed"
-        elif i == current_phase:
+        elif phase_id == current_phase_id:
             status = "active"
 
+        label = PHASE_SHORT_LABELS.get(phase_id, PHASE_DEFINITIONS[phase_id]["name"])
         html += f'''
         <div class="dm-phase-step {status}">
-            <div class="dm-phase-step-number">{num}</div>
+            <div class="dm-phase-step-number">{phase_id}</div>
             <div class="dm-phase-step-label">{label}</div>
         </div>
         '''
@@ -177,7 +170,7 @@ def update_progress_state(
     estimate_str = fmt_time(estimated_seconds) if estimated_seconds > 0 else "--:--"
 
     return {
-        "phase_stepper": create_phase_stepper_html(current_phase - 1),
+        "phase_stepper": create_phase_stepper_html(current_phase),
         "progress_html": create_progress_html(
             f"Phase {current_phase}/{total_phases}: {phase_name}",
             overall_progress,

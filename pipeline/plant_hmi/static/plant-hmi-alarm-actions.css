@@ -1,0 +1,35 @@
+/* Alarm ack/shelve controls (phase 6B): unacked gets a subtle left accent bar (ISA-18.2
+   "look here first"), acked stays grey/quiet, cleared-unacked is dimmed. */
+.alarm.unacked { border-left: 3px solid var(--hi); padding-left: 7px; }
+.alarm.alarm-active.acked { border-left: 3px solid transparent; opacity: .82; }
+.alarm.alarm-cleared { opacity: .55; border-left: 3px solid var(--dim); padding-left: 7px; }
+
+.alarm-actions { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.alarm-dur-row { display: flex; gap: 4px; }
+.alarm-error { grid-column: 1 / -1; color: var(--hi); font-size: 11.5px; margin-top: 4px; }
+
+.alarm-btn { font: 500 11.5px var(--mono); color: var(--text); background: #14141c; border: none;
+  border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  box-shadow: 2px 2px 5px var(--dark), -2px -2px 5px var(--light); }
+.alarm-btn:hover { color: var(--run); }
+.alarm-btn-ack { color: var(--run); }
+.alarm-btn-shelve, .alarm-btn-dur { color: var(--lo); }
+.alarm-btn-dur.active { box-shadow: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light); }
+.alarm-btn-confirm { color: var(--hi); }
+.alarm-btn-cancel { color: var(--muted); }
+.alarm-btn-ack-all { width: 100%; margin-bottom: 8px; }
+
+.alarm-reason { font: 500 12px var(--mono); color: var(--text); background: #0a0a0f; border: none;
+  border-radius: 8px; padding: 5px 10px; min-width: 160px; flex: 1;
+  box-shadow: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light); }
+.alarm-reason:focus { outline: 1px solid var(--run); }
+
+.alarm-shelved-box { margin-top: 10px; }
+.alarm-shelved-head { width: 100%; text-align: left; font: 500 11.5px var(--mono); color: var(--lo);
+  background: #14141c; border: none; border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  box-shadow: 2px 2px 5px var(--dark), -2px -2px 5px var(--light); }
+.alarm-shelved-row { display: grid; grid-template-columns: 58px 1fr; gap: 6px; align-items: baseline;
+  padding: 7px 10px; margin-top: 6px; border-radius: 10px; background: #121219;
+  box-shadow: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light); }
+.alarm-shelved-row .atime { grid-column: 1 / -1; }
+.alarm-shelved-row .alarm-btn { grid-column: 1 / -1; justify-self: start; }

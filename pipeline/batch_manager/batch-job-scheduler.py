@@ -49,7 +49,38 @@ class BatchJobScheduler:
         self._build_job_list()
 
     def _build_job_list(self):
-        """Build list of jobs based on defect distribution."""
+        """Build list of jobs: fixed exam set (reproducible, realism loop) or random distribution (default)."""
+        fixed_path = self.config["generation"].get("fixed_jobs")
+        if fixed_path:
+            self._build_fixed_job_list(fixed_path)
+        else:
+            self._build_random_job_list()
+
+    def _build_fixed_job_list(self, fixed_path):
+        """Load jobs verbatim from a JSON list of {case_id, defect_type, seed, background_image}.
+        Order is preserved (job_id = list index): no randomness, no shuffle, so repeated rounds on the
+        same file regenerate byte-identical cases. total_images/defect_distribution are ignored here."""
+        with open(fixed_path, "r", encoding="utf-8") as f:
+            cases = json.load(f)
+
+        for i, case in enumerate(cases):
+            job = {
+                "job_id": i,
+                "case_id": case["case_id"],
+                "defect_type": case["defect_type"],
+                "seed": case["seed"],
+                "background_image": Path(case["background_image"]),
+                "status": "pending"
+            }
+            self.jobs.append(job)
+
+        print(f"Created {len(self.jobs)} jobs from fixed exam set: {fixed_path}")
+        for defect_type in sorted({j["defect_type"] for j in self.jobs}):
+            count = sum(1 for j in self.jobs if j["defect_type"] == defect_type)
+            print(f"  {defect_type}: {count} images")
+
+    def _build_random_job_list(self):
+        """Build list of jobs based on defect distribution (original random behaviour)."""
         total = self.config["generation"]["total_images"]
         distribution = self.config["generation"]["defect_distribution"]
 
@@ -171,6 +202,11 @@ class BatchJobScheduler:
             workflow["10"]["inputs"]["sampler_name"] = sampler_config["name"]
             workflow["10"]["inputs"]["scheduler"] = sampler_config["scheduler"]
             workflow["10"]["inputs"]["denoise"] = defect_config.get("denoise", 0.85)
+            # Realism knob controlnet_strength (frozen for the batch by realism.knobs.freeze_for_batch):
+            # how tightly SD follows the mask; without the knob the workflow's own value stays.
+            cn_strength = (self.config.get("_realism_knobs") or {}).get("controlnet_strength")
+            if cn_strength is not None and workflow.get("9", {}).get("class_type") == "ControlNetApplyAdvanced":
+                workflow["9"]["inputs"]["strength"] = float(cn_strength)
             workflow["12"]["inputs"]["filename_prefix"] = output_prefix
 
         return workflow

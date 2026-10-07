@@ -29,6 +29,8 @@ from PIL import Image
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from plant_hmi import plant_telemetry_emitter as telemetry
+from plant_hmi.plant_setpoints import resolve as resolve_setpoint
 from batch_manager import (
     ComfyUIClient,
     BatchJobScheduler,
@@ -55,7 +57,8 @@ def load_mask_config() -> Dict:
 
 
 def apply_dark_defect_convention(
-    image_path: Path, annotation_mask_path: str, background_path: str = None, defect_type: str = None
+    image_path: Path, annotation_mask_path: str, background_path: str = None, defect_type: str = None,
+    darken_key: str = None,
 ):
     """
     Post-process generated image to make defects appear dark (correct RT convention).
@@ -70,9 +73,10 @@ def apply_dark_defect_convention(
         background_path: Path to original clean background patch used for inpainting
         defect_type: Skip darkening for metallic_inclusion (dense metal = bright)
     """
-    # metallic_inclusion is dense metal → absorbs more X-ray → appears bright (correct, skip)
-    if defect_type == "metallic_inclusion":
-        return
+    # metallic_inclusion is dense metal → absorbs more X-ray → appears bright: skip ONLY step 2.
+    # (An early return here used to skip step 1 too, so metallic images kept a regenerated background:
+    #  7.3 grey levels off the clean patch on every same-patch pair. Found by the realism loop.)
+    skip_darkening = defect_type == "metallic_inclusion"
 
     try:
         img_pil = Image.open(image_path).convert("L")
@@ -85,6 +89,7 @@ def apply_dark_defect_convention(
         # Root cause of halo: LoRA generates bright seam in zone [annot_mask → inpaint_mask].
         # Wide blend_mask let 50% of halo bleed through → visible on dark backgrounds.
         # Fix: near-hard cut with sigma=1.5 (3px aliasing only) → ~97% halo replaced by bg.
+        bg = None
         if background_path:
             bg_pil = Image.open(background_path).convert("L").resize(img_pil.size, Image.BILINEAR)
             bg = np.array(bg_pil, dtype=np.float32)
@@ -98,12 +103,11 @@ def apply_dark_defect_convention(
             # Inside annotation mask → keep inpainted content (to be darkened next)
             img = img * keep_mask + bg * (1.0 - keep_mask)
 
-        # --- Step 2: Darken defect interior to correct RT convention (void = dark) ---
-        # sigma=2 → 4-5px smooth edge, no concentric rings
-        darken_mask = cv2.GaussianBlur(mask_arr.astype(np.float32), (0, 0), sigmaX=2.0) / 255.0
-        if darken_mask.max() > 0:
-            darken_mask = darken_mask / darken_mask.max()  # normalize: core peak = 1.0
+        if skip_darkening:
+            Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), mode="L").save(str(image_path))
+            return
 
+        # --- Step 2: Darken defect interior to correct RT convention (void = dark) ---
         # Per-defect darkening strength (LOF/LOP subtler: blends into background like in real RT)
         DARKEN_BY_TYPE = {
             "lack_of_fusion": 0.85,
@@ -111,7 +115,39 @@ def apply_dark_defect_convention(
             "elongated_cavity": 0.65,  # Softer than default 0.92 — wormhole blends into metal
         }
         DARKEN_STRENGTH = DARKEN_BY_TYPE.get(defect_type, 0.92)
-        result = img * (1.0 - darken_mask * DARKEN_STRENGTH)
+        # Realism sensitivity screening (plan 261002-1430): save the pre-darken image so
+        # Random key of the darkening (depth draw, modulation field): the CASE (defect type + seed), not the
+        # file name. The file name carries the job index, so the same exam case darkened differently whenever
+        # a run held a different set of types (found 2/10: iter-03 vs sensitivity base, up to 68 grey levels).
+        key = darken_key or Path(image_path).name
+        # realism/predarken_replay can recompute step 2 on CPU for the "replay" knob groups.
+        # Only when REALISM_SAVE_PREDARKEN=1 (set by sensitivity_screen); no env -> no change.
+        if os.environ.get("REALISM_SAVE_PREDARKEN") == "1":
+            try:
+                predarken_path = Path(image_path).with_name(Path(image_path).stem + "_predarken.npz")
+                np.savez_compressed(
+                    predarken_path,
+                    img=img.astype(np.float32),
+                    bg=bg.astype(np.float32) if bg is not None else np.array([], dtype=np.float32),
+                    mask=mask_arr,
+                    strength=np.float32(DARKEN_STRENGTH),
+                    key=key,
+                )
+            except Exception:  # never break production over a diagnostics save
+                pass
+
+        # Realism knobs: depth range, depth modulation along the defect, edge blur sigma.
+        # Defaults reproduce the old uniform mask (sigma=2, core peak 1.0) x DARKEN_STRENGTH exactly.
+        # Non-default knobs darken relative to the clean background, so the defect is always darker than bg
+        # (the LoRA often paints bright defects; only the old 0.92 multiplier forced them dark).
+        try:
+            from realism.generator_hooks import darken_image
+            result = darken_image(img, bg, mask_arr, DARKEN_STRENGTH, key, defect_type)
+        except Exception:  # realism module unavailable: the exact old darkening
+            darken_mask = cv2.GaussianBlur(mask_arr.astype(np.float32), (0, 0), sigmaX=2.0) / 255.0
+            if darken_mask.max() > 0:
+                darken_mask = darken_mask / darken_mask.max()
+            result = img * (1.0 - darken_mask * DARKEN_STRENGTH)
         result = np.clip(result, 0, 255).astype(np.uint8)
         Image.fromarray(result, mode="L").save(str(image_path))
     except Exception as e:
@@ -128,6 +164,8 @@ def save_metadata(job: Dict, output_path: Path, config: Dict):
         "resolution": config["generation"]["resolution"],
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
+    if config.get("_realism_knobs"):  # knobs this batch loaded (PV per image, not only per folder)
+        metadata["realism_knobs"] = config["_realism_knobs"]
 
     metadata_path = output_path.with_suffix(".json")
     with open(metadata_path, "w") as f:
@@ -150,6 +188,23 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
     print("="*60)
 
     config = load_config(config_path)
+
+    # Plant HMI setpoint (rule R1): resolve INSIDE this process, env > store > recipe.
+    _recipe_steps = (config.get("sampler") or {}).get("steps")
+    sp_sampler_steps, sp_sampler_steps_source = resolve_setpoint("sampler_steps", _recipe_steps)
+    config.setdefault("sampler", {})["steps"] = sp_sampler_steps
+    print(f"  SP sampler_steps={sp_sampler_steps} (source={sp_sampler_steps_source})")
+    # Realism knobs (R1-R3): resolve once in this process, freeze for mask workers via env,
+    # write realism-knobs-used.json (PV) into the output dir.
+    try:
+        from realism.knobs import freeze_for_batch
+        _rk = freeze_for_batch(config["paths"]["output_base_dir"])
+        _changed = {k: v["value"] for k, v in _rk.items() if v["source"] != "default"}
+        if _changed:
+            config["_realism_knobs"] = {k: v["value"] for k, v in _rk.items()}
+        print(f"  Realism knobs: {_changed or 'all default'}")
+    except Exception as e:
+        print(f"  [warn] Realism knobs not loaded, generator behaves as before: {e}")
     mask_config = load_mask_config()
 
     # Pilot mode: reduce total images but keep user's defect distribution
@@ -181,12 +236,34 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
     scheduler = BatchJobScheduler(config)
     prefetcher = MaskPrefetcher(config, mask_config=mask_config)
 
+    # Post-processing switch: default True preserves existing behaviour for old configs
+    dark_convention_enabled = config.get("post_processing", {}).get("dark_convention", True)
+    print(f"  {'✓' if dark_convention_enabled else '○'} Dark-convention post-processing: "
+          f"{'on' if dark_convention_enabled else 'off'}")
+
     dilation_enabled = mask_config.get("inpaint_dilation", {}).get("enabled", False)
     if dilation_enabled:
         dil_cfg = mask_config["inpaint_dilation"]
         print(f"  ✓ Mask dilation enabled: kernel={dil_cfg['kernel_size']}px, shape={dil_cfg['kernel_shape']}")
     thermal_monitor = GPUThermalMonitor(config["thermal"])
     checkpoint_manager = CheckpointManager(config)
+
+    # Plant HMI telemetry: wrap the expensive steps once, where they are constructed.
+    # Wrappers pass results/exceptions through untouched; PLANT_TELEMETRY=0 disables.
+    from batch_manager.mask_prefetch_worker_pool import _generate_mask_worker
+    generate_mask = _generate_mask_worker
+    dark_convention = apply_dark_defect_convention
+    if telemetry.enable(f"{Path(config_path).stem}-{os.getpid()}"):
+        for method, call_kind in (("upload_image", "upload"), ("queue_prompt", "queue"),
+                                  ("poll_completion", "infer"), ("download_output", "download")):
+            setattr(client, method, telemetry.instrument(getattr(client, method), "P-601", call_kind))
+        thermal_monitor.wait_until_cool = telemetry.instrument(
+            thermal_monitor.wait_until_cool, "U-901", "thermal_hold")
+        generate_mask = telemetry.instrument(_generate_mask_worker, "R-201", "mask")
+        dark_convention = telemetry.instrument(apply_dark_defect_convention, "R-401", "post")
+        # PV (rule R2): report the value the scheduler actually holds, not the SP we passed.
+        telemetry.emit_config({"key": "sampler_steps", "value": scheduler.config["sampler"]["steps"],
+                               "source": sp_sampler_steps_source})
 
     # Check for existing checkpoint
     print("\n[2/7] Checking for checkpoint...")
@@ -219,6 +296,9 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
 
     start_time = time.time()
     retry_counts = {}
+    # Lets main() save progress if a stop (SIGINT/KeyboardInterrupt, e.g. from the Plant HMI)
+    # lands mid-loop: the index only advances on completion, so resume redoes the in-flight job.
+    _INTERRUPT_SAVE["save"] = lambda: checkpoint_manager.save_checkpoint(scheduler.get_state())
     # Cache masks per job_id so retries reuse the same mask (don't drain prefetcher buffer)
     cached_masks = {}
 
@@ -230,6 +310,7 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
 
         job_id = job["job_id"]
         defect_type = job["defect_type"]
+        telemetry.set_job(job_id, defect_type)
         retry_count = retry_counts.get(job_id, 0)
 
         # Progress info
@@ -249,9 +330,8 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             if job_id in cached_masks:
                 mask_result = cached_masks[job_id]
             else:
-                from batch_manager.mask_prefetch_worker_pool import _generate_mask_worker
                 bg_str = str(job["background_image"]) if job.get("background_image") else None
-                mask_result = _generate_mask_worker(
+                mask_result = generate_mask(
                     defect_type, job["seed"], config["generation"]["resolution"],
                     mask_config.get("inpaint_dilation") if mask_config else None,
                     bg_str,
@@ -299,11 +379,16 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             output_path = scheduler.get_output_path(job, is_mask=False)
             client.download_output(server_filename, str(output_path))
 
-            # Apply dark defect convention: reflect bright LoRA defects to dark
-            apply_dark_defect_convention(
-                output_path, annotation_mask_path, str(job["background_image"]),
-                defect_type=job["defect_type"]
-            )
+            # Apply dark defect convention: reflect bright LoRA defects to dark.
+            # Only needed for workflows that keep ControlNet — there the mask image is fed
+            # as the control image, so SD paints a bright blob shaped like the mask and this
+            # step inverts it. Workflows without ControlNet already produce dark, textured
+            # defects, so inverting would destroy them. Default stays on for old configs.
+            if dark_convention_enabled:
+                dark_convention(
+                    output_path, annotation_mask_path, str(job["background_image"]),
+                    defect_type=job["defect_type"], darken_key=f"{job['defect_type']}-{job['seed']}"
+                )
 
             # Save original thin mask as ground truth annotation
             if config["output"]["save_masks"]:
@@ -321,6 +406,7 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             # Mark complete and clear mask cache for this job
             scheduler.mark_complete(job)
             cached_masks.pop(job_id, None)
+            telemetry.job_outcome("ok")
 
             # Checkpoint
             if checkpoint_manager.should_checkpoint(scheduler.completed_count):
@@ -339,6 +425,7 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
                 retry_counts[job_id] = retry_count
                 retry_delay = config["reliability"]["retry_delay_seconds"]
 
+                telemetry.job_outcome("retry", e)
                 print(f"  Retrying ({retry_count}/{max_retries}) in {retry_delay}s...")
                 time.sleep(retry_delay)
 
@@ -348,6 +435,7 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
             else:
                 print(f"  Failed after {max_retries} retries, skipping job")
                 scheduler.mark_failed(job, str(e))
+                telemetry.job_outcome("failed", e)
                 cached_masks.pop(job_id, None)
                 traceback.print_exc()
 
@@ -385,6 +473,9 @@ def run_batch_production(config_path: str, pilot_mode: bool = False, auto_resume
     print("="*60)
 
 
+_INTERRUPT_SAVE = {}  # set by run_batch_production once the scheduler and checkpointer exist
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Batch production pipeline for synthetic X-ray defect images"
@@ -412,7 +503,15 @@ def main():
         return 0
 
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user. Progress saved to checkpoint.")
+        save = _INTERRUPT_SAVE.get("save")
+        if save is None:
+            print("\n\nInterrupted before the production loop started (nothing to save).")
+            return 130
+        try:
+            save()
+            print("\n\nInterrupted. Progress saved to checkpoint (resume with --resume).")
+        except Exception as e:
+            print(f"\n\nInterrupted. Checkpoint save FAILED: {e}")
         return 130
 
     except Exception as e:

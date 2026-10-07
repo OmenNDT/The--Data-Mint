@@ -1,0 +1,17 @@
+{
+ "thr": {
+  "dom_16": 0.9188036498427384,
+  "dai_8": 1.8280455046892161,
+  "ngang_8": 1.6306413620710372
+ },
+ "q": 0.9012613430127041,
+ "nd_alarm_target": 0.155,
+ "achieved_nd_rate": 0.1554,
+ "method": "feature_bank_kernel.calibrate trên ô 278x278 cắt ngẫu nhiên từ nền sạch W0003 512x512",
+ "n_clean_patches": 827,
+ "n_crops": 1654,
+ "crops_per_patch": 2,
+ "crop_size": 278,
+ "seed": 42,
+ "margin": "viền rộng σ, tối đa 16"
+}

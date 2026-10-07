@@ -10,7 +10,7 @@ from importlib import import_module
 # Import from kebab-case filenames
 comfyui_client_module = import_module('.comfyui-rest-api-client', package=__name__)
 job_scheduler_module = import_module('.batch-job-scheduler', package=__name__)
-mask_prefetcher_module = import_module('.mask-prefetch-worker-pool', package=__name__)
+mask_prefetcher_module = import_module('.mask_prefetch_worker_pool', package=__name__)
 thermal_monitor_module = import_module('.gpu-thermal-monitor', package=__name__)
 checkpoint_manager_module = import_module('.checkpoint-state-manager', package=__name__)
 

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Độ thật ảnh sinh</title>
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-realism.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Độ thật ảnh sinh · vòng cải thiện</h1>
+      <span class="area">So với RIAWELC thật theo sáu tiêu chí hình dạng và biên</span>
+      <span class="spacer"></span>
+      <span class="badge" id="job-badge">—</span>
+      <a href="/plant-hmi/">← Plant HMI</a>
+      <a href="/">← Launcher</a>
+    </header>
+
+    <section class="card">
+      <h2>Điều khiển</h2>
+      <div class="ctl">
+        <label>Số ảnh sinh lại mỗi loại <input id="n-per-type" type="number" min="1" max="500" value="40"></label>
+        <div class="grp" id="types"><b>Loại lỗi sinh lại</b></div>
+      </div>
+      <div class="ctl">
+        <div class="grp"><b>Từng bước</b>
+          <button id="btn-evaluate" type="button">1 · Đánh giá bộ mới nhất</button>
+          <button id="btn-propose" type="button" data-arm="Ghi núm đề xuất?">2 · Đề xuất núm</button>
+          <button id="btn-cycle" type="button" data-arm="Sinh lại và đánh giá?">3 · Sinh lại và đánh giá</button>
+        </div>
+        <div class="grp"><b>Tự lặp</b>
+          <label>tối đa <input id="max-iter" type="number" min="1" max="20" value="5"> vòng</label>
+          <button id="btn-auto" type="button" data-arm="Tự lặp tới khi đạt?">Tự lặp tới khi đạt</button>
+        </div>
+        <button id="btn-stop" type="button" data-arm="Dừng vòng lặp?" disabled>Dừng</button>
+      </div>
+      <div class="msg" id="job-stage">—</div>
+      <div class="bar"><i id="job-bar"></i></div>
+      <div id="job-msg" class="msg"></div>
+    </section>
+
+    <div class="grid">
+      <div class="stack">
+        <section class="card"><h2>Thước mới · khuyết tật so W0003 thật (vòng mới nhất)</h2>
+          <div class="well" id="defect-metrics"></div>
+          <p class="msg">16 đặc trưng khuyết tật (hình dạng vùng + biên), tham chiếu là chính lỗi thật W0003 (×1, cùng
+            tỉ lệ), không phải RIAWELC. C2ST, KID (kèm CI), density/coverage, tỉ lệ tách được vùng; "hoàn hảo" là mức
+            khi so ảnh thật với ảnh thật (chia đôi tập), đặt cạnh để biết còn cách bao xa. Dùng thước này để quyết định.</p></section>
+        <section class="card"><h2>Cổng v2 · quyết định vòng mới nhất (thước mới)</h2><div id="v2-gate"></div></section>
+        <section class="card"><h2>5 vấn đề · bộ gốc → vòng mới nhất</h2><div id="issues"></div></section>
+        <section class="card"><h2>Lịch sử các vòng</h2><div class="well" id="trend"></div><div id="history"></div></section>
+        <section class="card"><h2>Thước cũ · sáu tiêu chí, so RIAWELC, xuyên miền (không dùng để quyết định)</h2>
+          <div class="well" id="results"></div>
+          <p class="msg">AUC là xác suất một ảnh sinh có số đo cao hơn một mảnh RIAWELC; 0,5 là không phân biệt được.
+            Hổ phách: lệch 0,1 tới 0,25; đỏ: lệch trên 0,25. Góc nghiêng 90° là vùng nằm ngang.</p></section>
+      </div>
+      <section class="card"><h2>Núm vặn bộ sinh · thử / sản xuất / PV</h2><div id="knobs"></div>
+        <p class="msg">Vòng lặp chỉ dùng và chỉ ghi núm THỬ. Đợt sinh thường của launcher đọc núm SẢN XUẤT: muốn áp bộ núm thử
+          cho sản xuất thì bấm "Đưa núm thử vào sản xuất". PV là giá trị đợt sinh gần nhất của vòng lặp đã nạp.</p>
+        <ul class="audit" id="audit"></ul></section>
+    </div>
+
+    <section class="card" id="sens-card">
+      <h2>Độ nhạy núm (bước 4)</h2>
+      <div class="ctl sens-controls">
+        <label>Số ảnh mỗi loại <input id="sens-n" type="number" min="5" max="40" value="20"></label>
+        <button id="sens-btn-pilot" type="button" data-arm="Chạy thử (pilot)?"
+          title="Đo nhanh để kiểm trước khi chạy đủ: điểm gốc + replay (CPU) + ControlNet± (GPU), vài phút.">Chạy thử (pilot)</button>
+        <button id="sens-btn-full" type="button" data-arm="Đo độ nhạy đầy đủ?"
+          title="Đo cả 13 nhóm núm quanh điểm gốc, khoảng 420 ảnh GPU, chừng 40 phút.">Đo độ nhạy đầy đủ (~40 phút GPU)</button>
+        <span class="tip" id="sens-progress">—</span>
+      </div>
+      <div class="warn" id="sens-stale" style="display:none">Núm sản xuất đã đổi so với lần đo, cần đo lại.</div>
+      <div class="msg" id="sens-source">Chưa đo lần nào.</div>
+      <div class="well sens-well" id="sens-heat"></div>
+      <p class="msg">Mỗi hàng là một biến thể: điểm gốc lệch một nhóm núm một bước. Màu xanh đẩy mục tiêu đúng hướng, đỏ
+        đẩy sai hướng; đậm hơn là lệch nhiều hơn so với các biến thể khác trong cùng cột. Số đậm có viền sáng là khác
+        biệt có ý nghĩa thống kê (CI 95% của độ lệch không chứa 0). Rê chuột vào từng ô xem giá trị trước/sau và CI.</p>
+    </section>
+  </div>
+  <script src="/plant-hmi/static/plant-hmi-realism-issues.js"></script>
+  <script src="/plant-hmi/static/plant-hmi-realism-v2.js"></script>
+  <script src="/plant-hmi/static/plant-hmi-realism-knobs.js"></script>
+  <script src="/plant-hmi/static/plant-hmi-realism-app.js"></script>
+  <script type="module" src="/plant-hmi/static/plant-hmi-realism-sensitivity.js"></script>
+</body>
+</html>

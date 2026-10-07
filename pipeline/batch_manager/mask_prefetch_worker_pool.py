@@ -108,6 +108,17 @@ def _generate_mask_worker(
     )
     binary_mask, feathered_mask = generator.generate()
 
+    # Realism loop: retry empty masks, reshape per knobs (defaults = unchanged). See realism/generator_hooks.py
+    try:
+        from realism.generator_hooks import shape_generated_mask
+        binary_mask, feathered_mask = shape_generated_mask(
+            defect_type, seed, binary_mask, feathered_mask,
+            regenerate=lambda s: generators[defect_type](
+                height=resolution, width=resolution, seed=s, weld_center_y=weld_center_y).generate(),
+            weld_center_y=weld_center_y)
+    except Exception:  # realism module missing or broken: keep the generator's own mask
+        pass
+
     # Save original thin mask (annotation ground truth)
     annotation_file = tempfile.NamedTemporaryFile(
         suffix="_annotation.png", delete=False, dir=tempfile.gettempdir()

@@ -154,6 +154,20 @@ class ComfyUIClient:
         with open(output_path, "wb") as f:
             f.write(response.content)
 
+    def free_memory(self, unload_models: bool = True, free_memory: bool = True):
+        """Clear ComfyUI execution cache and optionally unload models.
+
+        Useful between benchmark runs with different checkpoints to ensure
+        ComfyUI doesn't serve cached results from a previous model.
+        """
+        endpoint = f"{self.base_url}/free"
+        payload = {"unload_models": unload_models, "free_memory": free_memory}
+        try:
+            response = requests.post(endpoint, json=payload, timeout=30)
+            return response.status_code == 200
+        except Exception:
+            return False
+
     def get_queue_status(self) -> Dict:
         """
         Get current queue status.

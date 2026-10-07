@@ -39,6 +39,7 @@ from .ui_dataset_panel import (
 )
 from .ui_progress_panel import (
     create_progress_panel,
+    create_phase_stepper_html,
     format_log_line
 )
 from .ui_results_panel import (
@@ -52,7 +53,6 @@ from .ui_results_panel import (
 )
 from .ui_auto_label_panel import create_auto_label_tab
 from .ui_training_panel import create_training_tab
-from .ui_generation_panel import create_generation_tab
 from .ui_theme import create_theme, CUSTOM_CSS
 from .ui_icons import icon, get_ui_icon, get_tab_label, get_button_label
 
@@ -118,7 +118,12 @@ class PipelineLauncherApp:
             comfyui_available, comfyui_msg = True, "Demo Mode"
         else:
             gpu_available, gpu_msg = check_gpu_available()
-            comfyui_available, comfyui_msg = check_comfyui_connection()
+            # ComfyUI host/port come from config (remote box), not localhost default.
+            comfyui_cfg = base_cfg.get("comfyui", {})
+            comfyui_available, comfyui_msg = check_comfyui_connection(
+                host=comfyui_cfg.get("host", "localhost"),
+                port=comfyui_cfg.get("port", 8188),
+            )
 
         # Build UI with custom dark theme
         self._theme = create_theme()
@@ -137,6 +142,11 @@ class PipelineLauncherApp:
                     {icon("zap", 12, "#34d399")}
                     <span>Pipeline 9 Phases</span>
                 </div>
+                <a class="dm-badge" href="/plant-hmi/" target="_blank" rel="noopener"
+                   style="text-decoration:none;margin-left:8px">
+                    {icon("activity", 12, "#34d399")}
+                    <span>Plant HMI</span>
+                </a>
             </div>
             '''
             gr.HTML(header_html)
@@ -278,21 +288,9 @@ class PipelineLauncherApp:
                     )
 
             with gr.Tab(get_tab_label("tab_progress")):
-                # Phase stepper
-                phase_stepper_html = '''
-                <div class="dm-phase-stepper">
-                    <div class="dm-phase-step active"><div class="dm-phase-step-number">1</div><div class="dm-phase-step-label">Chuẩn bị</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">2</div><div class="dm-phase-step-label">Phân tích</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">3</div><div class="dm-phase-step-label">Config</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">4</div><div class="dm-phase-step-label">Tạo ảnh</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">5</div><div class="dm-phase-step-label">Hậu xử lý</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">6</div><div class="dm-phase-step-label">QA</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">7</div><div class="dm-phase-step-label">Đánh giá</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">8</div><div class="dm-phase-step-label">Training</div></div>
-                    <div class="dm-phase-step"><div class="dm-phase-step-number">9</div><div class="dm-phase-step-label">Hoàn thành</div></div>
-                </div>
-                '''
-                gr.HTML(phase_stepper_html)
+                # Phase stepper — dynamic, updated from start_pipeline() while running
+                # (was static HTML before, always stuck showing step 1 "Chuẩn bị").
+                phase_stepper = gr.HTML(value=create_phase_stepper_html(-1))
 
                 # Progress container
                 with gr.Column(elem_classes=["dm-progress-container"]):
@@ -331,8 +329,9 @@ class PipelineLauncherApp:
             with gr.Tab(get_tab_label("tab_training")):
                 training_load_info = create_training_tab()
 
-            with gr.Tab(get_tab_label("tab_generation")):
-                generation_load_info = create_generation_tab()
+            # The "🖼️ Tạo Ảnh" tab was removed (2026-10-02): batches are composed and started from the
+            # Plant HMI (/plant-hmi/: "＋ Tạo mẻ mới", per-run output folder, interlocks, SIGINT stop).
+            # ui_generation_panel.py and its helpers are kept on disk but no longer wired.
 
             with gr.Tab(get_tab_label("tab_labeling")):
                 create_auto_label_tab()
@@ -388,6 +387,7 @@ class PipelineLauncherApp:
                 outputs=[
                     run_btn,
                     cancel_btn,
+                    phase_stepper,
                     phase_label,
                     progress_bar,
                     progress_pct,
@@ -411,13 +411,6 @@ class PipelineLauncherApp:
                 app.load(
                     fn=training_load_info["load_fn"],
                     outputs=training_load_info["load_outputs"],
-                )
-
-            # Auto-refresh ComfyUI status on page load
-            if generation_load_info:
-                app.load(
-                    fn=generation_load_info["load_fn"],
-                    outputs=generation_load_info["load_outputs"],
                 )
 
         return app, self._theme, self._css
@@ -451,6 +444,7 @@ class PipelineLauncherApp:
             yield (
                 gr.update(visible=True),
                 gr.update(visible=False),
+                create_phase_stepper_html(-1),
                 "❌ Lỗi: Vui lòng chọn ít nhất 1 loại khuyết tật",
                 0, "0%",
                 "Vui lòng chọn ít nhất 1 loại khuyết tật",
@@ -464,6 +458,7 @@ class PipelineLauncherApp:
             yield (
                 gr.update(visible=True),
                 gr.update(visible=False),
+                create_phase_stepper_html(-1),
                 "❌ Lỗi: Vui lòng chọn ít nhất 1 phase",
                 0, "0%",
                 "Vui lòng chọn ít nhất 1 phase",
@@ -478,6 +473,7 @@ class PipelineLauncherApp:
             yield (
                 gr.update(visible=True),
                 gr.update(visible=False),
+                create_phase_stepper_html(-1),
                 f"❌ Lỗi load preset: {e}",
                 0, "0%",
                 f"Lỗi: {e}",
@@ -495,27 +491,32 @@ class PipelineLauncherApp:
             }
             config = self.preset_manager.apply_overrides(config, overrides)
 
-        # Validate config
+        # Inject the chosen defect types as an even distribution BEFORE validating.
+        # Backgrounds are fixed in config (not user-selectable); the user only picks
+        # WHICH defects get painted onto them. This overwrites the base config's
+        # distribution (which may not sum to 1.0 once new defect types are added),
+        # so it must happen before validate_config checks the sum.
+        # BatchJobScheduler reads defect_distribution to build the job list.
+        n = len(defect_types)
+        even = [round(1.0 / n, 4)] * n
+        even[-1] = round(1.0 - sum(even[:-1]), 4)  # last absorbs rounding -> exact 1.0
+        config.setdefault("generation", {})["defect_distribution"] = {
+            d: even[i] for i, d in enumerate(defect_types)
+        }
+
+        # Validate config (now sees the normalized, user-chosen distribution)
         errors = self.preset_manager.validate_config(config)
         if errors:
             yield (
                 gr.update(visible=True),
                 gr.update(visible=False),
+                create_phase_stepper_html(-1),
                 f"❌ Lỗi config: {', '.join(errors)}",
                 0, "0%",
                 f"Lỗi: {', '.join(errors)}",
                 "*Lỗi config*", "---", "---", [], []
             )
             return
-
-        # Inject the chosen defect types as an even distribution. Backgrounds are
-        # fixed in config (not user-selectable); the user only picks WHICH defects
-        # get painted onto them. BatchJobScheduler reads defect_distribution to
-        # build the job list.
-        even = round(1.0 / len(defect_types), 4)
-        config.setdefault("generation", {})["defect_distribution"] = {
-            d: even for d in defect_types
-        }
 
         # Bake the fully-merged config (base + preset + overrides + defect list)
         # into a temp YAML and point Phase 6 at it. Otherwise the run silently
@@ -582,6 +583,7 @@ class PipelineLauncherApp:
             yield (
                 gr.update(visible=False),
                 gr.update(visible=True),
+                create_phase_stepper_html(phases[current_phase_idx]),
                 f"⚙️ Phase {phases[current_phase_idx]}/9: {PHASE_DEFINITIONS.get(phases[current_phase_idx], {}).get('name', 'Unknown')}",
                 min(overall_pct, 99),
                 f"{overall_pct:.0f}%",
@@ -635,9 +637,14 @@ class PipelineLauncherApp:
 
         log_text = '\n'.join(log_lines)
 
+        # On completion, mark every requested phase as done (index past the last
+        # one so create_phase_stepper_html's "< current" check marks them completed).
+        final_stepper = create_phase_stepper_html(max(phases) + 1 if result_holder[0] and result_holder[0].success else -1)
+
         yield (
             gr.update(visible=True),
             gr.update(visible=False),
+            final_stepper,
             "✅ Hoàn thành" if result_holder[0] and result_holder[0].success else "❌ Thất bại",
             100,
             "100%",
@@ -696,7 +703,14 @@ def main():
         theme=theme,
         css=css,
         show_error=True,
+        prevent_thread_lock=True,  # FastAPI app exists only after launch; mount extra routes, then block
     )
+    try:
+        from plant_hmi.plant_hmi_routes import attach_plant_hmi
+        attach_plant_hmi(app.app)
+    except Exception:  # the plant view is optional; the launcher must still run
+        logger.exception("Plant HMI not mounted")
+    app.block_thread()
 
 
 if __name__ == "__main__":

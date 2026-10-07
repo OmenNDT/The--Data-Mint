@@ -19,7 +19,6 @@ from .launcher_utils import (
     resolve_pipeline_path
 )
 from .ui_auto_label_panel import create_auto_label_tab
-from .ui_generation_panel import create_generation_tab
 
 __all__ = [
     # Orchestrator
@@ -49,5 +48,4 @@ __all__ = [
     # Auto-Label UI
     "create_auto_label_tab",
     # Generation UI
-    "create_generation_tab",
 ]

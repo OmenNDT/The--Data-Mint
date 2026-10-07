@@ -23,7 +23,13 @@ logger = logging.getLogger(__name__)
 
 def _check_comfyui_status() -> str:
     """Check ComfyUI connection and return status HTML."""
-    ok, msg = check_comfyui_connection()
+    # ComfyUI host/port come from config (remote box), not the localhost default.
+    cfg = load_batch_config() or {}
+    comfyui_cfg = cfg.get("comfyui", {}) if isinstance(cfg, dict) else {}
+    ok, msg = check_comfyui_connection(
+        host=comfyui_cfg.get("host", "localhost"),
+        port=comfyui_cfg.get("port", 8188),
+    )
     if ok:
         return f'''
         <div class="dm-status-bar">
@@ -209,8 +215,12 @@ def create_generation_tab():
     refresh_btn.click(fn=_check_comfyui_status, outputs=[comfyui_status_md])
 
     def on_run(total_images, bg_dir, output_dir, pilot_mode, *slider_and_sampler_values):
-        slider_vals = list(slider_and_sampler_values[:5])
-        sampler_vals = list(slider_and_sampler_values[5:])
+        # Cac o truot phan bo dung dung mot o cho moi lop trong DEFECT_TYPES, phan con lai
+        # la tham so bo lay mau. Phai cat theo do dai danh sach, khong cat cung so 5:
+        # danh sach da tang tu 5 len 10 lop nen cat cung lam vong lap ben duoi vuot chi so.
+        n_defects = len(DEFECT_TYPES)
+        slider_vals = list(slider_and_sampler_values[:n_defects])
+        sampler_vals = list(slider_and_sampler_values[n_defects:])
 
         defect_dist = {}
         for i, defect in enumerate(DEFECT_TYPES):

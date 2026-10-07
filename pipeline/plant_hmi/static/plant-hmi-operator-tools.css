@@ -1,0 +1,60 @@
+/* Operator tool buttons (Bước 10 output folders, Bước 11 ComfyUI on/off): dark neumorphism,
+   tokens from plant-hmi.css. Tooltip = [data-tip] bubble, appears on hover and keyboard focus. */
+.ot-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.ot-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px; border: 0; border-radius: 12px; cursor: pointer;
+  font: 600 12.5px 'Inter', system-ui, sans-serif; color: var(--text);
+  background: linear-gradient(145deg, #1d1d28, #14141c);
+  box-shadow: 5px 5px 12px var(--dark), -4px -4px 10px var(--light), inset 1px 1px 0 var(--edge);
+}
+.ot-btn:hover { box-shadow: 5px 5px 12px var(--dark), -4px -4px 10px var(--light),
+  inset 1px 1px 0 var(--edge), 0 0 0 1px rgba(94, 200, 216, .25); }
+.ot-btn:active { box-shadow: inset 3px 3px 7px var(--dark), inset -3px -3px 7px var(--light); }
+.ot-btn:disabled { cursor: not-allowed; color: var(--dim); }
+.ot-btn[data-tip]:hover::after, .ot-btn[data-tip]:focus-visible::after {
+  content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 20;
+  width: 300px; padding: 10px 12px; border-radius: 10px; white-space: normal; text-align: left;
+  font: 400 12px/1.5 'Inter', system-ui, sans-serif; color: var(--text);
+  background: #101016; box-shadow: 8px 8px 20px var(--dark), -4px -4px 12px var(--light),
+    inset 1px 1px 0 var(--edge);
+}
+.ot-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
+.ot-dot.on { background: var(--run); box-shadow: 0 0 8px rgba(94, 200, 216, .6); }
+.ot-dot.warm { background: var(--lo); }
+.ot-confirm { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.ot-mini {
+  border: 0; border-radius: 8px; padding: 5px 10px; cursor: pointer; font: 12px 'Inter', system-ui, sans-serif;
+  color: var(--text); background: #16161f; box-shadow: 3px 3px 7px var(--dark), -2px -2px 6px var(--light);
+}
+.ot-mini.danger { color: var(--hi); }
+.ot-runs { margin-top: 10px; padding: 10px; border-radius: 12px; background: #0b0b11;
+  box-shadow: inset 3px 3px 7px var(--dark), inset -3px -3px 7px var(--light); }
+.ot-root { font: 11px var(--mono); color: var(--dim); margin-bottom: 8px; word-break: break-all; }
+.ot-run { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 0;
+  border-top: 1px solid rgba(255, 255, 255, .04); }
+.ot-run:first-of-type { border-top: 0; }
+.ot-run-name { font: 12px var(--mono); color: var(--text); word-break: break-all; }
+.ot-run-meta { grid-column: 1; font-size: 11.5px; color: var(--muted); }
+.ot-run-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 6px; align-items: center; }
+.ot-empty { color: var(--dim); font-size: 12.5px; }
+.ot-note { margin-top: 8px; font-size: 12px; color: var(--muted); min-height: 1em; word-break: break-all; }
+.ot-note.bad { color: var(--hi); }
+
+/* realism evaluation of one run (plant-hmi-run-evaluation.js) */
+.ev-panel { grid-column: 1 / -1; margin-top: 8px; padding: 10px; border-radius: 10px; background: #0e0e15;
+  box-shadow: inset 2px 2px 5px var(--dark), inset -2px -2px 5px var(--light); }
+.ev-note { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.ev-note.bad { color: var(--hi); }
+.ev-note a { color: var(--run); }
+.ev-pair + .ev-pair { margin-top: 10px; }
+.ev-head { font: 600 12px var(--mono); color: var(--text); margin-bottom: 6px; }
+.ev-grid { display: grid; grid-template-columns: 1.6fr repeat(3, .8fr) 1fr; gap: 3px 10px; font-size: 12px; color: var(--muted); }
+.ev-th { color: var(--dim); font: 11px var(--mono); }
+.ev-num { font-family: var(--mono); text-align: right; color: var(--text); }
+.ev-verdict.ok { color: var(--muted); }
+.ev-verdict.warn { color: var(--lo); }
+.ev-verdict.bad { color: var(--hi); }
+.ev-section-head { font: 600 12px var(--mono); color: var(--run); margin-bottom: 6px; }
+.ev-old { margin-top: 12px; border-top: 1px solid rgba(255,255,255,.07); padding-top: 8px; }
+.ev-old summary { cursor: pointer; font-size: 11.5px; color: var(--dim); margin-bottom: 6px; }

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plant HMI · The Data Mint</title>
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi.css">
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-comfyui-progress.css">
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-setpoint-faceplate.css">
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-batch-control.css">
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-alarm-actions.css">
+  <link rel="stylesheet" href="/plant-hmi/static/plant-hmi-operator-tools.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Plant HMI</h1>
+      <span class="area">Khu sinh ảnh X-ray tổng hợp · mức 1 (chỉ đọc)</span>
+      <span class="spacer"></span>
+      <div class="mode-switch" role="tablist" aria-label="Chế độ xem">
+        <button id="mode-live" class="mode-btn" type="button" aria-pressed="true">Trực tiếp</button>
+        <button id="mode-replay" class="mode-btn" type="button" aria-pressed="false">Phát lại</button>
+      </div>
+      <span class="conn" id="conn" data-ok=""><i></i><span id="conn-text">đang kết nối…</span></span>
+      <a href="/plant-hmi/realism/">Độ thật ảnh sinh →</a>
+      <a href="/">← Launcher</a>
+    </header>
+
+    <section class="card" id="replay-card" hidden>
+      <h2>Điều khiển phát lại</h2>
+      <div id="replay-controls"></div>
+    </section>
+
+    <div class="grid">
+      <main class="card">
+        <h2>P&amp;ID</h2>
+        <div class="well pid-well"><svg id="pid" role="img" aria-label="Sơ đồ P&ID khu sinh ảnh"></svg></div>
+        <div class="legend">
+          <span style="--c:var(--outline)">bình thường</span>
+          <span style="--c:var(--run)">đang chạy</span>
+          <span style="--c:var(--lo)">báo động LO</span>
+          <span style="--c:var(--hi)">báo động HI</span>
+          <span style="--c:var(--product)">mức (level)</span>
+          <span style="--c:var(--run);border-radius:50%">hạt = 1 job ảnh (đỏ: lỗi/thử lại)</span>
+          <span class="muted">Hạt trễ 4 s theo telemetry · KI = thời gian xử lý p50 trong 5 phút · bấm thiết bị để xem chi tiết</span>
+        </div>
+      </main>
+
+      <aside class="side">
+        <section class="card"><h2>Báo động</h2><div id="alarms"></div></section>
+        <section class="card"><h2>Điều khiển batch (start/stop)</h2><div id="batch-control"></div><div id="operator-tools"></div></section>
+        <section class="card"><h2>SP-601 · Faceplate bước sampler</h2><div id="setpoint-faceplate"></div></section>
+        <section class="card"><h2>P-601 · bên trong ComfyUI</h2><div id="comfy-progress"></div></section>
+        <section class="card"><h2>Batch đang chạy</h2><div id="batches"></div></section>
+        <section class="card"><h2>Tiện ích (utilities)</h2><div id="utilities"></div></section>
+        <section class="card"><h2 id="detail-title">Chi tiết thiết bị</h2><div id="detail"></div></section>
+      </aside>
+    </div>
+
+    <div class="grid grid-lower">
+      <section class="card"><h2>Xu hướng (trend)</h2><div id="trend-panel"></div></section>
+      <section class="card"><h2>Nhật ký báo động (journal)</h2><div id="alarm-journal"></div></section>
+    </div>
+  </div>
+  <script type="module" src="/plant-hmi/static/plant-hmi-app.js"></script>
+</body>
+</html>

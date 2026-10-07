@@ -21,7 +21,18 @@ BATCH_CONFIG_PATH = PIPELINE_DIR / "config" / "batch-config.yaml"
 PROMPT_TEMPLATES_PATH = PIPELINE_DIR / "comfyui-workflows" / "defect-type-prompt-templates.yaml"
 BATCH_MAIN_SCRIPT = PIPELINE_DIR / "batch_manager" / "batch-production-main.py"
 
-DEFECT_TYPES = ["crack", "porosity", "inclusion", "lack_of_fusion", "undercut"]
+DEFECT_TYPES = [
+    "crack",
+    "porosity",
+    "clustered_porosity",
+    "linear_porosity",
+    "lack_of_fusion",
+    "lack_of_penetration",
+    "slag_inclusion",
+    "linear_slag_inclusion",
+    "metallic_inclusion",
+    "elongated_cavity",
+]
 
 DEFAULT_SAMPLER = {
     "name": "euler",
@@ -168,7 +179,7 @@ def _default_batch_config() -> Dict:
         "generation": {
             "total_images": 100,
             "resolution": 512,
-            "defect_distribution": {d: 0.2 for d in DEFECT_TYPES},
+            "defect_distribution": {d: 0.1 for d in DEFECT_TYPES},
         },
         "sampler": dict(DEFAULT_SAMPLER),
         "paths": {

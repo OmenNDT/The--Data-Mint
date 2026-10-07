@@ -49,3 +49,15 @@ pipeline/config/_generated/
 
 # Windows-mangled filenames (accidental, not real files)
 E\357*
+
+# Plant HMI telemetry (per-pid JSONL)
+pipeline/plant_hmi/telemetry/
+# Plant HMI phase 2 historian dir
+pipeline/plant_hmi/historian/
+# Plant HMI setpoint store + audit
+pipeline/plant_hmi/setpoints/
+
+# Realism loop runtime state (knob stores, audit with client IPs, run logs, checkpoints)
+pipeline/realism/state/
+# Plant HMI control state (batch audit, alarm ack/shelve)
+pipeline/plant_hmi/control/

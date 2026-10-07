@@ -1,0 +1,9 @@
+{
+ "thr": {
+  "dom_16": 0.8999519622325893,
+  "dai_8": 2.2421823453903196,
+  "ngang_8": 2.3155935621261596
+ },
+ "source": "Data_Science/analysis/riawelc-features/v2-kernel/calibration.json",
+ "note": "ngưỡng 3 kernel tách vùng, hiệu chỉnh để 15,5% mảnh không lỗi RIAWELC có vùng"
+}
