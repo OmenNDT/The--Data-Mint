@@ -1,0 +1,1 @@
+- [Gradio CORS voids custom-header CSRF](gradio-cors-custom-header-csrf-bypass.md) — non-localhost Host => any Origin allowed on :7860; check Origin in handler

@@ -1,0 +1,64 @@
+# LoRA Training Config: Lack of Fusion Defect
+# Dataset: 269 patches from GDXray W0003
+# Trigger word: xray_lack_of_fusion
+
+[model_arguments]
+pretrained_model_name_or_path = "E:\\ComfyUI_windows_portable\\ComfyUI\\models\\checkpoints\\sd-v1-5-pruned-emaonly.safetensors"
+v2 = false
+v_parameterization = false
+
+[network_arguments]
+network_module = "networks.lora"
+network_dim = 32
+network_alpha = 16
+network_train_unet_only = true
+network_train_text_encoder_only = false
+
+[optimizer_arguments]
+optimizer_type = "AdamW8bit"
+learning_rate = 1e-4
+lr_scheduler = "cosine"
+lr_warmup_steps = 0
+
+[training_arguments]
+output_dir = "E:\\The Data Mint\\kohya-ss\\output\\lack_of_fusion"
+output_name = "xray_lack_of_fusion_lora_r32"
+save_model_as = "safetensors"
+save_precision = "fp16"
+save_every_n_epochs = 5
+max_train_epochs = 20
+
+train_batch_size = 4
+mixed_precision = "fp16"
+gradient_checkpointing = true
+gradient_accumulation_steps = 1
+
+seed = 42
+clip_skip = 1
+noise_offset = 0.1
+
+xformers = true
+cache_latents = true
+cache_latents_to_disk = true
+
+logging_dir = "E:\\The Data Mint\\kohya-ss\\logs\\lack_of_fusion"
+log_prefix = "lack_of_fusion_lora"
+
+[dataset_arguments]
+resolution = 512
+enable_bucket = false
+min_bucket_reso = 512
+max_bucket_reso = 512
+caption_extension = ".txt"
+shuffle_caption = false
+keep_tokens = 0
+
+[[datasets]]
+  [[datasets.subsets]]
+    image_dir = "E:\\The Data Mint\\dataset\\processed\\patches_512\\lack_of_fusion"
+    num_repeats = 8
+
+  [[datasets.subsets]]
+    image_dir = "E:\\The Data Mint\\dataset\\processed\\patches_512\\clean"
+    num_repeats = 1
+    is_reg = true
