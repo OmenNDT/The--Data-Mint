@@ -80,6 +80,12 @@ def _pores(m, rng, k, prefix="pore"):
 
 def _lop(m, rng, k):
     H, W = m.shape
+    length_scale = k.get("lop_length_scale", 1.0)
+    if length_scale != 1.0:
+        # Kéo dài THEO CHIỀU NGANG quanh tâm khối, giữ nguyên bề dày (không nén/giãn trục dọc): m[row, col] ->
+        # scale col quanh tâm. 1,0 = hành vi cũ (khớp REGISTRY). Dùng trước nghiêng/lượn/cắt để các bước đó
+        # áp lên dải đã kéo dài, giống thứ tự dựng hình của bộ sinh gốc.
+        m = _affine(m, ndi.center_of_mass(m), np.diag([1.0, length_scale]))
     if k["lop_tilt_max_deg"] > 0:
         t = rng.uniform(min(1.0, k["lop_tilt_max_deg"]), k["lop_tilt_max_deg"]) * rng.choice([-1, 1])
         m = _affine(m, ndi.center_of_mass(m), _rot(t))

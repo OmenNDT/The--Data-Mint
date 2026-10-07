@@ -18,17 +18,16 @@ chính cỡ đó.
 import argparse
 import json
 import os
-import zlib
 from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from PIL import Image
-from scipy import ndimage as ndi
 from skimage.morphology import area_opening
 
 from .defect_features16 import DEFECT_FEATURES, MASK_KERNELS, defect_features, kernel_maps
+from .reference_w0003_crop import crop_synthetic, crop_synthetic_grid  # noqa: F401  (re-export, xem dưới)
 
 WORKERS = min(32, os.cpu_count() or 4)
 
@@ -38,6 +37,37 @@ W0003_CLEAN_DIR = PROJECT_ROOT / "dataset/processed/patches_512_Confimed/clean"
 REF_DIR = Path(__file__).resolve().parent / "reference"
 CALIBRATION_PATH = REF_DIR / "w0003-kernel-calibration.json"
 FEATURES_CSV_PATH = REF_DIR / "w0003-defect-features.csv"
+
+# Thước v2 (bước 2, plan 261006): loại đường mép hàn trước khi chọn vùng lớn nhất (xem defect_features16.
+# _is_border_line). Ngưỡng 3 kernel KHÔNG đổi (hiệu chỉnh theo per-pixel area_opening, không phụ thuộc cách
+# chọn vùng lớn nhất), nên v2/v3 DÙNG LẠI CALIBRATION_PATH; chỉ 16 đặc trưng trên ô khuyết tật đổi (vùng được
+# chọn khác đi) → mỗi ruler ghi file riêng, KHÔNG đè FEATURES_CSV_PATH (ruler v1 cơ chế gốc, xem hard constraint).
+RULER_V1 = "w0003-16dac-trung-v1"
+RULER_V2 = "w0003-16dac-trung-v2"
+# Thước v3 (follow-up 7/10, người dùng duyệt): loại DẢI MÉP TRÊN/DƯỚI tile (xem defect_features16.
+# _is_edge_band_line) thay vì loại đường chạm lề trái/phải + trải rộng của v2 — dành riêng cho crack/
+# lack_of_penetration (bản chất lỗi dài tự nhiên, v2 loại nhầm lỗi thật chạy ngang GIỮA tile, xem báo cáo
+# fullstack-developer-261007-1228-lop-feature-deviation.md mục 0 và overlay lop-real-region-overlay-261007.png).
+RULER_V3 = "w0003-16dac-trung-v3"
+FEATURES_CSV_PATH_V2 = REF_DIR / "w0003-defect-features-v2.csv"
+FEATURES_CSV_PATH_V3 = REF_DIR / "w0003-defect-features-v3.csv"
+RULERS = {
+    RULER_V1: {"exclude_border": False, "exclude_edge_band": False, "features_csv": FEATURES_CSV_PATH},
+    RULER_V2: {"exclude_border": True, "exclude_edge_band": False, "features_csv": FEATURES_CSV_PATH_V2},
+    RULER_V3: {"exclude_border": False, "exclude_edge_band": True, "features_csv": FEATURES_CSV_PATH_V3},
+}
+
+# Thước THEO LOẠI (follow-up 7/10, người dùng duyệt): v2 mặc định cho mọi loại; crack và lack_of_penetration
+# dùng v3 (loại dải mép trên/dưới, giữ lỗi dài ở GIỮA tile — xem ghi chú RULER_V3). Đổi map này PHẢI đi kèm
+# đổi RULER_SCHEME_ID để vòng lặp nhận ra bản tốt nhất cũ đo bằng sơ đồ khác (xem loop_gate_v2/loop_partial:
+# so sánh defect_metrics["ruler"] == RULER_SCHEME_ID để quyết định đặt mốc mới/sinh lại tất cả).
+TYPE_RULER_OVERRIDES = {"crack": RULER_V3, "lack_of_penetration": RULER_V3}
+RULER_SCHEME_ID = "w0003-16dac-trung-v2-per-type-crack-lop-v3"
+
+
+def ruler_for(defect_type):
+    """Thước áp cho `defect_type` theo sơ đồ hiện hành: v2 (loại đường mép hàn) mặc định, trừ override."""
+    return TYPE_RULER_OVERRIDES.get(defect_type, RULER_V2)
 
 ND_ALARM = 0.155       # tỉ lệ báo nhầm mục tiêu trên ô nền sạch, giống feature_bank_kernel.ND_ALARM (RIAWELC)
 TILE_SIZE = 278         # cỡ ô khuyết tật W0003 gốc
@@ -115,86 +145,70 @@ def build_calibration(clean_dir=W0003_CLEAN_DIR, workers=WORKERS):
 
 
 def _feature_row(args):
-    """Worker cho Pool: (file_path, cls, defect_type, thr) -> hàng dict. Top-level để pickle được."""
-    f, cls, defect_type, thr = args
+    """Worker cho Pool: (file_path, cls, defect_type, thr, exclude_border, exclude_edge_band) -> hàng dict.
+    Top-level để pickle được."""
+    f, cls, defect_type, thr, exclude_border, exclude_edge_band = args
     img = np.asarray(Image.open(f).convert("L"), dtype=np.float32)
-    feats = defect_features(img, thr)
+    feats = defect_features(img, thr, exclude_border=exclude_border, exclude_edge_band=exclude_edge_band)
     return {"file": f"{cls}/{f.name}", "cls": cls, "defect_type": defect_type, **feats}
 
 
-def build_features_csv(thr, workers=WORKERS):
+def build_features_csv(thr, workers=WORKERS, exclude_border=False, exclude_edge_band=False):
     """Tính 16 đặc trưng cho mọi ô khuyết tật thật W0003 (×1, nguyên ô, không cắt không phóng).
-    Trả DataFrame cột: file, cls (thư mục W0003), defect_type (tên bộ sinh), has_region, 16 đặc trưng."""
+    exclude_border=True: thước v2, loại đường mép hàn trước khi chọn vùng lớn nhất. exclude_edge_band=True:
+    thước v3, loại dải mép trên/dưới tile (xem defect_features16). Trả DataFrame cột: file, cls (thư mục
+    W0003), defect_type (tên bộ sinh), has_region, 16 đặc trưng."""
     cls_to_defect_type = {v: k for k, v in W0003_CLASS.items() if v is not None}
     jobs = []
     for cls_dir in sorted(p for p in W0003_DEFECT_DIR.iterdir() if p.is_dir()):
         cls = cls_dir.name
         defect_type = cls_to_defect_type.get(cls)
         for f in sorted(cls_dir.glob("*.png")):
-            jobs.append((f, cls, defect_type, thr))
+            jobs.append((f, cls, defect_type, thr, exclude_border, exclude_edge_band))
     with Pool(workers) as pool:
         rows = pool.map(_feature_row, jobs, chunksize=4)
     cols = ["file", "cls", "defect_type", "has_region"] + DEFECT_FEATURES
     return pd.DataFrame(rows, columns=cols)
 
 
-def load_reference(defect_type):
-    """Trả DataFrame các ô W0003 thật của loại khuyết tật bộ sinh `defect_type` (đọc w0003-defect-features.csv
-    đã tính sẵn). Báo lỗi rõ ràng nếu chưa chạy hiệu chỉnh, hoặc loại khuyết tật chưa có mẫu W0003 tham chiếu."""
+def load_reference(defect_type, ruler=RULER_V1):
+    """Trả DataFrame các ô W0003 thật của loại khuyết tật bộ sinh `defect_type` (đọc tệp đặc trưng đã tính sẵn
+    của `ruler`, xem RULERS). Báo lỗi rõ ràng nếu chưa chạy hiệu chỉnh, hoặc loại khuyết tật chưa có mẫu W0003
+    tham chiếu. ruler mặc định RULER_V1 giữ đúng hành vi hiện hành (nơi gọi không truyền ruler không đổi)."""
     if defect_type not in W0003_CLASS:
         raise ValueError(f"defect_type không rõ: {defect_type!r} (xem W0003_CLASS)")
     if W0003_CLASS[defect_type] is None:
         raise ValueError(f"{defect_type!r} chưa có mẫu W0003 thật tham chiếu (W0003_CLASS[{defect_type!r}] = None)")
-    if not FEATURES_CSV_PATH.exists():
-        raise FileNotFoundError(f"chưa có {FEATURES_CSV_PATH}, chạy `python -m realism.reference_w0003` trước")
-    df = pd.read_csv(FEATURES_CSV_PATH)
+    if ruler not in RULERS:
+        raise ValueError(f"ruler không rõ: {ruler!r} (xem RULERS)")
+    path = RULERS[ruler]["features_csv"]
+    if not path.exists():
+        raise FileNotFoundError(f"chưa có {path}, chạy `python -m realism.reference_w0003 --ruler {ruler}` trước")
+    df = pd.read_csv(path)
     return df[df.defect_type == defect_type].reset_index(drop=True)
-
-
-def crop_synthetic(img, mask, size=TILE_SIZE):
-    """Cắt ảnh sinh (512×512) quanh trọng tâm mặt nạ lỗi, cỡ `size`, giữ ×1 (không phóng), kẹp trong biên ảnh.
-    Dùng để so ảnh sinh với ô W0003 thật cùng cỡ; LƯU Ý (xem báo cáo): ô W0003 thật KHÔNG căn giữa khuyết tật
-    (ô cắt lưới cố định từ ảnh gốc lớn), còn hàm này luôn căn giữa quanh lỗi, nên vị trí lỗi trong khung lệch
-    nhau có hệ thống giữa hai tập — ảnh hưởng đặc trưng nhạy vị trí biên (vd bien_*) nhiều hơn đặc trưng hình dạng."""
-    img = np.asarray(img)
-    h, w = img.shape[:2]
-    cy, cx = ndi.center_of_mass(np.asarray(mask) > 0)
-    y0 = int(np.clip(cy - size // 2, 0, max(h - size, 0)))
-    x0 = int(np.clip(cx - size // 2, 0, max(w - size, 0)))
-    return img[y0:y0 + size, x0:x0 + size]
-
-
-def crop_synthetic_grid(img, mask, key, size=TILE_SIZE):
-    """Cắt ảnh sinh (512×512) cỡ `size` quanh tâm mặt nạ lỗi NHƯNG lệch tâm một khoảng ngẫu nhiên (20..size-20
-    điểm ảnh mỗi trục), seed cố định theo `key` (vd tên tệp ảnh) để tái lập được. Dùng để so ảnh sinh với ô
-    W0003 thật (xem rủi ro trong plan, mục 6/10, bước 7): ô W0003 gốc là CẮT LƯỚI CỐ ĐỊNH từ ảnh lớn, khuyết tật
-    không nằm giữa khung; `crop_synthetic` (căn giữa đúng tâm) lệch hệ thống so cách cắt đó, nhất là đặc trưng
-    nhạy vị trí biên (bien_*). Khung lệch ngẫu nhiên nhưng vẫn LUÔN chứa tâm khuyết tật mô phỏng đúng cách W0003
-    cắt theo lưới mà không biết trước lỗi nằm đâu trong ô."""
-    img = np.asarray(img)
-    h, w = img.shape[:2]
-    cy, cx = ndi.center_of_mass(np.asarray(mask) > 0)
-    rng = np.random.default_rng(zlib.crc32(str(key).encode()))
-    y0 = int(np.clip(cy - rng.uniform(20, size - 20), 0, max(h - size, 0)))
-    x0 = int(np.clip(cx - rng.uniform(20, size - 20), 0, max(w - size, 0)))
-    return img[y0:y0 + size, x0:x0 + size]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.parse_args()
+    ap.add_argument("--ruler", choices=sorted(RULERS), default=RULER_V1,
+                     help="v1 (mặc định, đang chạy sản xuất) hoặc v2 (loại đường mép hàn, ghi tệp riêng "
+                          "FEATURES_CSV_PATH_V2, KHÔNG đè tệp v1)")
+    a = ap.parse_args()
     REF_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = RULERS[a.ruler]
 
     print("Hiệu chỉnh ngưỡng kernel trên nền sạch W0003...")
+    # Ngưỡng dùng chung cho mọi ruler (xem ghi chú ở RULERS): luôn đọc/ghi CALIBRATION_PATH, không nhân bản theo ruler.
     calibration = build_calibration()
     CALIBRATION_PATH.write_text(json.dumps(calibration, ensure_ascii=False, indent=1), encoding="utf-8")
     thr_rounded = {k: round(v, 3) for k, v in calibration["thr"].items()}
     print(f"  ngưỡng: {thr_rounded}, phân vị chung {calibration['q']:.4f}, "
           f"đạt {calibration['achieved_nd_rate']:.3f} (mục tiêu {ND_ALARM}) trên {calibration['n_crops']} ô nền sạch")
 
-    print("Tính 16 đặc trưng trên mọi ô khuyết tật thật W0003...")
-    df = build_features_csv(calibration["thr"])
-    df.to_csv(FEATURES_CSV_PATH, index=False)
+    print(f"Tính 16 đặc trưng trên mọi ô khuyết tật thật W0003 (ruler {a.ruler})...")
+    df = build_features_csv(calibration["thr"], exclude_border=cfg["exclude_border"],
+                             exclude_edge_band=cfg["exclude_edge_band"])
+    df.to_csv(cfg["features_csv"], index=False)
 
     print(f"{len(df)} ô · {len(W0003_CLASS) - sum(v is None for v in W0003_CLASS.values())} lớp có ánh xạ")
     print("Tỉ lệ có vùng (has_region) theo lớp W0003:")

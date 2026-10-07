@@ -18,12 +18,12 @@ from .post_darkening import darken, strength_map
 logger = logging.getLogger(__name__)
 MAX_EMPTY_RETRIES = 5
 TYPE_KNOBS = {"crack": ("crack_transverse_share", "crack_widen_px"),
-              "lack_of_penetration": ("lop_tilt_max_deg", "lop_wave_amp_px", "lop_gap_max"),
+              "lack_of_penetration": ("lop_tilt_max_deg", "lop_wave_amp_px", "lop_gap_max", "lop_length_scale"),
               "linear_porosity": ("linear_pore_aspect_min", "linear_pore_aspect_max", "pore_axis_jitter_deg",
                                   "linear_pore_irregularity_px"),
               "slag_inclusion": ("slag_scale", "slag_elongation", "slag_irregularity_px"),
               "elongated_cavity": ("ecav_tilt_max_deg",),
-              "lack_of_fusion": ("lof_length_scale", "lof_width_scale", "lof_gap_max"),
+              "lack_of_fusion": ("lof_length_scale", "lof_width_scale", "lof_gap_max", "lof_band_width_scale"),
               **{t: ("pore_aspect_min", "pore_aspect_max", "pore_axis_jitter_deg", "pore_irregularity_px")
                  for t in PORE_TYPES - {"linear_porosity"}}}
 # Bán kính làm mềm mép mỗi bộ sinh gốc tự dùng (mask_generator/*-mask-generator.py); làm mềm lại đúng bán kính đó.
@@ -36,6 +36,29 @@ def _knobs():
         return values()
     except Exception:
         return dict(DEFAULTS)
+
+
+# Khoảng bề rộng dải GỐC của bộ sinh không ngấu (mask_generator/lack-of-fusion-mask-generator.py,
+# LackOfFusionMaskGenerator.band_width_range mặc định). Núm lof_band_width_scale co khoảng này TẠI SINH (trước
+# fillPoly + feather), khác _thin hậu kỳ của mask_shaping_lof.py (affine siết quanh tâm toàn khối, đã thử và làm
+# hỏng khả năng phát hiện vì méo dải nghiêng). 1.0: trả {} (giữ đúng band_width_range gốc, hành vi cũ nguyên văn).
+LOF_BASE_BAND_WIDTH_RANGE = (5, 12)
+
+
+def lof_generation_kwargs():
+    """kwargs bổ sung truyền vào LackOfFusionMaskGenerator(...) theo núm lof_band_width_scale.
+    {} nếu núm ở mặc định hoặc đọc núm lỗi (không bao giờ ném lỗi, vòng độ thật không làm hỏng sản xuất)."""
+    try:
+        scale = _knobs()["lof_band_width_scale"]
+        if scale == DEFAULTS["lof_band_width_scale"]:
+            return {}
+        lo, hi = LOF_BASE_BAND_WIDTH_RANGE
+        new_lo = max(1, int(round(lo * scale)))
+        new_hi = max(new_lo + 1, int(round(hi * scale)))
+        return {"band_width_range": (new_lo, new_hi)}
+    except Exception:
+        logger.exception("lof_generation_kwargs lỗi, giữ band_width_range gốc")
+        return {}
 
 
 def shape_generated_mask(defect_type, seed, binary_mask, feathered_mask, regenerate, weld_center_y=None):

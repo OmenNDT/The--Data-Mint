@@ -131,6 +131,35 @@ class EvaluationTests(unittest.TestCase):
         self.assertIsNone(out["defect_metrics"]["ruler"])
         self.assertEqual(out["defect_metrics"]["types"], [])
 
+    def test_summary_passes_through_per_type_ruler_on_target_and_reference_only(self):
+        """Follow-up 7/10 (thước theo loại): mỗi loại ghi "ruler" đã dùng; "on_target"/"reference_only"
+        (bước 1, 3 plan 261006) cũng phải lọt qua summarize, không bị lược bỏ như lần đầu thêm (lỗi tự
+        phát hiện: JS trang đọc 3 trường này từ /evaluate nhưng summarize từng lọc mất cả ba)."""
+        result = {**self.RESULT, "defect_metrics": {"ruler": "w0003-16dac-trung-v2-per-type-crack-lop-v1", "types": {
+            "crack": {"reference": "Crack", "ruler": "w0003-16dac-trung-v1", "n_real": 32, "n_syn": 50,
+                      "detection_rate_real": 0.9, "detection_rate_syn": 0.8, "c2st": 0.72, "c2st_reason": None,
+                      "kid": {"value": 1.1, "ci_low": 0.5, "ci_high": 1.7},
+                      "density_coverage": {"density": 0.6, "coverage": 0.5}, "small_reference": False,
+                      "reference_only": False, "on_target": {"mean_overlap_on_region": 0.7, "on_target_rate": 0.6,
+                                                               "threshold": 0.3},
+                      "null": {"c2st": {"median": 0.5}, "kid": {"median": 0.1},
+                                "density": {"median": 0.9}, "coverage": {"median": 0.95}}},
+            "metallic_inclusion": {"reference": "Metallic_Inclusion", "ruler": "w0003-16dac-trung-v2", "n_real": 3,
+                                    "n_syn": 20, "detection_rate_real": 1.0, "detection_rate_syn": 0.1,
+                                    "reference_only": True, "on_target": {"mean_overlap_on_region": None,
+                                                                           "on_target_rate": 0.0, "threshold": 0.3},
+                                    "c2st": None, "c2st_reason": "x", "kid": None, "density_coverage": {},
+                                    "small_reference": True, "null": None},
+        }}}
+        out = evaluation.summarize(result)
+        types = {t["defect_type"]: t for t in out["defect_metrics"]["types"]}
+        self.assertEqual(types["crack"]["ruler"], "w0003-16dac-trung-v1")
+        self.assertFalse(types["crack"]["reference_only"])
+        self.assertEqual(types["crack"]["on_target"]["on_target_rate"], 0.6)
+        self.assertEqual(types["metallic_inclusion"]["ruler"], "w0003-16dac-trung-v2")
+        self.assertTrue(types["metallic_inclusion"]["reference_only"])
+        self.assertEqual(types["metallic_inclusion"]["on_target"]["on_target_rate"], 0.0)
+
     def test_status_reads_newest_finished_result(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(evaluation, "RUNS_DIR", Path(d)), \
                 mock.patch.dict(evaluation._jobs, clear=True):

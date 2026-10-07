@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from . import loop_gate
+from .evaluate import DEFECT_METRICS_RULER
 from .generator_hooks import TYPE_KNOBS
 from .knobs import REGISTRY
 from .loop_common import history
@@ -26,7 +27,9 @@ DARKEN_TYPE_KNOBS = {"pore_post_depth_min": {"porosity", "clustered_porosity", "
                      "linear_post_depth_min": {"linear_porosity"}, "linear_post_depth_max": {"linear_porosity"},
                      "linear_post_modulation": {"linear_porosity"},
                      "slag_post_depth_min": {"slag_inclusion"}, "slag_post_depth_max": {"slag_inclusion"},
-                     "ecav_post_depth_min": {"elongated_cavity"}, "ecav_post_depth_max": {"elongated_cavity"}}
+                     "ecav_post_depth_min": {"elongated_cavity"}, "ecav_post_depth_max": {"elongated_cavity"},
+                     "lop_post_depth_min": {"lack_of_penetration"}, "lop_post_depth_max": {"lack_of_penetration"},
+                     "crack_post_depth_min": {"crack"}, "crack_post_depth_max": {"crack"}}
 
 
 def affected_types(cand, best, selected):
@@ -60,12 +63,27 @@ def coverage(best):
     return _cases_per_type((rec or {}).get("source") or result.get("source"))
 
 
+def _best_ruler_outdated(best):
+    """True nếu bản tốt nhất đo bằng sơ đồ thước KHÁC sơ đồ hiện hành (follow-up 7/10: thước theo loại đổi
+    thì mọi số đo cũ không còn so được, xem evaluate.DEFECT_METRICS_RULER/reference_w0003.RULER_SCHEME_ID).
+    best chưa từng có defect_metrics (ruler=None, bản rất cũ) KHÔNG coi là lỗi thời ở đây — giữ hành vi gốc
+    (coverage theo fixed-jobs.json) cho trường hợp đó, chỉ chặn khi CÓ ruler cũ và nó khác ruler hiện hành."""
+    result = read_json(best["eval_run"], "result.json") or {}
+    best_ruler = (result.get("defect_metrics") or {}).get("ruler")
+    return best_ruler is not None and best_ruler != DEFECT_METRICS_RULER
+
+
 def plan_cycle(cand, types, n):
     """(loại cần sinh, loại dùng lại, bản tốt nhất hoặc None). Dùng lại khi: loại không bị ảnh hưởng VÀ bản tốt nhất
-    đã sinh đúng n ca của loại đó trên bộ đề thi (khác n thì tập ca khác, không dùng lại được)."""
+    đã sinh đúng n ca của loại đó trên bộ đề thi (khác n thì tập ca khác, không dùng lại được).
+
+    Thước đổi (ruler khác, xem _best_ruler_outdated): KHÔNG dùng lại loại nào — sinh lại toàn bộ `types` của
+    vòng này để đặt mốc mới sạch (follow-up 7/10, người dùng duyệt), dù núm không đổi."""
     best = loop_gate.read_best()
     if not best:
         return list(types), [], None
+    if _best_ruler_outdated(best):
+        return list(types), [], best
     have = coverage(best)
     best_knobs = {k: v["value"] for k, v in (best.get("knobs") or {}).items()}
     hit = set(affected_types(cand, best_knobs, types))

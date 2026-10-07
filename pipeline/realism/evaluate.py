@@ -23,10 +23,15 @@ from scipy import ndimage as ndi
 from .defect_eval import evaluate_defects
 from .features import CRITERIA, REF_DIR, six_criteria
 from .knobs import read_pv
+from .reference_w0003 import RULER_SCHEME_ID
 from .runlog import RunLog
 from .stats import auc, c2st, ks
 
-DEFECT_METRICS_RULER = "w0003-16dac-trung-v1"
+# Định danh sơ đồ chọn thước hiện hành (follow-up 7/10: thước THEO LOẠI, xem reference_w0003.ruler_for);
+# ghi vào defect_metrics["ruler"] mỗi lần đo để loop_gate_v2/loop_partial so được bản tốt nhất cũ đo bằng
+# sơ đồ nào — khác đi thì coi là "mốc mới: thước mới" (đặt cổng lại) và sinh lại TẤT CẢ loại (không mang số
+# đo cũ). KHÔNG đổi tên biến DEFECT_METRICS_RULER (nơi gọi cũ còn tham chiếu), chỉ đổi GIÁ TRỊ theo sơ đồ mới.
+DEFECT_METRICS_RULER = RULER_SCHEME_ID
 
 PAIRS = [("CR", "crack"), ("PO", "porosity"), ("LP", "lack_of_penetration"),
          ("PO", "clustered_porosity"), ("PO", "linear_porosity"), ("LP", "lack_of_fusion")]

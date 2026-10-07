@@ -74,3 +74,26 @@ Nguyên tắc: cổng dùng cả 4 độ đo thước mới; tỉ lệ tách đ�
 - Test: test-realism-shaping-ecav.py chuyển pytest → unittest; 29 bộ test đạt. Báo cáo nhánh chuyển về reports/ của plan này.
 - Vòng sau: độ sâu riêng xỉ + rỗ khí kéo dài (quá nhạt), núm modulation riêng rỗ khí chuỗi, LF mức nhẹ (≥0,85, đứt 1–2),
   xác nhận nứt dày 2 với 80–120 ca, lẫn kim loại cần bộ dò vùng sáng + thêm ảnh thật.
+
+## Vòng 2 nhánh E/F/G + đưa SX (7/10 sáng)
+- E: xỉ slag_post_depth 0,65–0,85; rỗ khí kéo dài ecav_post_depth 0,80–1,00; chuỗi linear_post_modulation 0 → ĐÃ đưa SX (đặt tay vào best, ghi chú).
+- F: LF mức nhẹ 4 biến thể đều không tốt hơn (m4 KID xấu rõ) → bỏ hướng scale; cần sửa band_width_range/_thin.
+  Nứt dày 2 ở 120 ca: KID xấu rõ. Vòng 17 (dày 0) bị cổng chặn tách vùng (kém thật 29 điểm). Dày 1 ở 120 ca: KID tốt hơn rõ so 2,
+  so 0 không khác → người dùng duyệt dày 1, đặt tay, ĐÃ đưa SX; xoá crack_widen_px khỏi tuning-memory.
+- G: lẫn kim loại thước không đo được (lỗi sáng, 3 ảnh thật) → loại khỏi cổng, chỉ tham khảo.
+- Sửa thước: người dùng duyệt điểm 1 (độ đo đúng đối tượng) + 3 (chọn vùng cùng luật thật/sinh); KHÔNG sửa hiệu chỉnh báo động giả.
+  Subagent làm sau cờ phiên bản thước, chưa bật.
+- Thước theo loại (7/10 trưa): v2 (bỏ vùng dài chạm hai mép) cho mọi loại trừ nứt/không thấu (giữ v1); lẫn kim loại reference_only;
+  độ đo đúng đối tượng (chỉ báo). RULER_SCHEME_ID đổi → vòng sinh lại hết + đặt mốc mới. Vòng 18 = mốc mới (240 ảnh, núm SX).
+  Mốc: PO C2ST 0,52 (hoàn hảo 0,47) KID 0,02; LF C2ST 0,89 KID 0,74; CR tách vùng 0,45/0,74, đúng đối tượng 38%; LP KID 2,10 cov 0,38.
+
+## Vòng 3 (7/10 chiều): nứt / không thấu / không ngấu
+- Nứt: 22/40 ca sinh quá nhạt (tương phản ~1× nhiễu); nứt chưa có độ sâu riêng. Núm đề xuất crack_post_depth 0,70–0,90 (CPU replay:
+  tách vùng 0,43→0,83, KID/coverage tốt hơn, C2ST xấu hơn). CHƯA nối dây, chờ thước v3.
+- Không thấu: tham chiếu thật nhiễm, 12/16 LP thật + 12/32 CR thật đo nhầm dải sáng sát mép trên/dưới ô → đề xuất núm LP vô hiệu.
+  Đã nối dây lop_length_scale, lop_post_depth_* (mặc định = cũ). Người dùng duyệt: thước v3 loại đường sát mép trên/dưới cho CR/LP.
+- Không ngấu: núm lof_band_width_scale (co tại sinh) 0,8/0,6/0,4 đều bị chặn tách vùng (tụt thêm 12,5–20 điểm). Đóng hướng co bề rộng.
+- Thước v3 (loại đường sát mép trên/dưới) cho CR/LP; LP chỉ tham khảo (6/19 ảnh thật). Vòng 19 = mốc mới.
+- Vòng 20 nứt crack_post_depth 0,70–0,90: neutral; cả bộ tách vùng 0,38→0,70 (thật 0,67), đúng đối tượng 28→55%, cov 0,59→0,76,
+  C2ST/KID nhích xấu không rõ. Người dùng duyệt → ĐÃ đưa SX. Không thấu theo mắt: độ sâu 0,25–0,35 + dài 1,3 → ĐÃ đưa SX.
+  best → vòng 20 (đặt tay, ghi chú; số LP vòng 20 là trước khi đổi núm). Không ngấu tạm dừng.

@@ -24,16 +24,31 @@ function kidText(k) {
   return `${fmt(k.value)} [${fmt(k.ci_low)}, ${fmt(k.ci_high)}]`;
 }
 
+const ON_TARGET_TIP = 'Tỉ lệ vùng kernel chọn làm "vùng lỗi" trùng mặt nạ lỗi thật của bộ sinh (chỉ đo được '
+  + 'trên ảnh sinh, W0003 thật không có mặt nạ). Chỉ báo, KHÔNG dùng để chặn cổng.';
+
+function onTargetNote(ot) {
+  if (!ot || ot.on_target_rate === null || ot.on_target_rate === undefined) return null;
+  return h('div', { class: 'ev-note', title: ON_TARGET_TIP },
+    `Đúng đối tượng: ${fmt(ot.on_target_rate, 2)} ca (ngưỡng trùng ≥ ${fmt(ot.threshold, 2)}) · `
+    + `TB vùng trùng mặt nạ trên ảnh có vùng ${fmt(ot.mean_overlap_on_region, 2)}`);
+}
+
+const rulerTag = (e) => (e.ruler ? ` [thước ${e.ruler}]` : '');
+
 function newRulerRow(e) {
   if (e.reference === null || e.reference === undefined) {
     return h('div', { class: 'ev-pair' },
-      h('div', { class: 'ev-head' }, `${e.defect_type} · chưa có tham chiếu W0003, chỉ đo tách vùng ảnh sinh`),
-      h('div', { class: 'ev-note' }, `Tách vùng sinh ${fmt(e.detection_rate_syn, 2)} (n=${e.n_syn})`));
+      h('div', { class: 'ev-head' }, `${e.defect_type} · chưa có tham chiếu W0003, chỉ đo tách vùng ảnh sinh${rulerTag(e)}`),
+      h('div', { class: 'ev-note' }, `Tách vùng sinh ${fmt(e.detection_rate_syn, 2)} (n=${e.n_syn})`),
+      onTargetNote(e.on_target));
   }
   const p = e.perfect || {};
-  const warn = e.small_reference ? ' · tham chiếu ít mẫu, chỉ báo' : '';
+  const warn = (e.small_reference ? ' · tham chiếu ít mẫu, chỉ báo' : '')
+    + (e.reference_only ? ' · CHỈ THAM KHẢO, không chặn cổng' : '');
   return h('div', { class: 'ev-pair' },
-    h('div', { class: 'ev-head' }, `${e.defect_type} ↔ W0003/${e.reference} · n thật/sinh ${e.n_real}/${e.n_syn}${warn}`),
+    h('div', { class: 'ev-head' },
+      `${e.defect_type} ↔ W0003/${e.reference} · n thật/sinh ${e.n_real}/${e.n_syn}${rulerTag(e)}${warn}`),
     h('div', { class: 'ev-grid' },
       h('span', { class: 'ev-th' }, 'Độ đo'), h('span', { class: 'ev-th' }, 'Thật'),
       h('span', { class: 'ev-th' }, 'Sinh'), h('span', { class: 'ev-th' }, 'Hoàn hảo'), h('span', { class: 'ev-th' }, ''),
@@ -47,7 +62,8 @@ function newRulerRow(e) {
       h('span', {}, 'Density'), h('span', { class: 'ev-num' }, '—'),
       h('span', { class: 'ev-num' }, fmt((e.density_coverage || {}).density)), h('span', { class: 'ev-num' }, fmt(p.density)), h('span', {}, ''),
       h('span', {}, 'Coverage'), h('span', { class: 'ev-num' }, '—'),
-      h('span', { class: 'ev-num' }, fmt((e.density_coverage || {}).coverage)), h('span', { class: 'ev-num' }, fmt(p.coverage)), h('span', {}, '')));
+      h('span', { class: 'ev-num' }, fmt((e.density_coverage || {}).coverage)), h('span', { class: 'ev-num' }, fmt(p.coverage)), h('span', {}, '')),
+    onTargetNote(e.on_target));
 }
 
 function newRulerBlock(dm) {

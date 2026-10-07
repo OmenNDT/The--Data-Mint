@@ -38,13 +38,18 @@ DETECT_IMPROVE_MIN = 0.02  # chặn vẫn giữ nếu chưa cải thiện ít nh
 
 def _types_considered(rec_types, new_dm, best_dm):
     """Loại đủ điều kiện so cặp: có mặt ở cả hai vòng (rec_types nếu vòng chỉ nhắm một số loại), có tham chiếu
-    W0003 (reference không None), và tham chiếu đủ >= MIN_REAL_ROWS ca thật có vùng ở CẢ HAI lần đo (cùng
-    tệp w0003-defect-features.csv nên n_real lẽ ra bằng nhau, kiểm cả hai cho chắc)."""
+    W0003 (reference không None), KHÔNG chỉ tham khảo (reference_only, xem defect_eval.REFERENCE_ONLY_TYPES —
+    hiện chỉ metallic_inclusion, bước 3 plan 261006-defect-metrics-w0003-reference; trước đây chỉ bị bỏ qua
+    NGẦM qua MIN_REAL_ROWS vì n_real=3, giờ loại rõ để không phụ thuộc n_real có đổi sau này), và tham chiếu
+    đủ >= MIN_REAL_ROWS ca thật có vùng ở CẢ HAI lần đo (cùng tệp w0003-defect-features.csv nên n_real lẽ ra
+    bằng nhau, kiểm cả hai cho chắc)."""
     pool = set(rec_types) if rec_types else set(new_dm)
     out = []
     for t in sorted(pool & set(new_dm) & set(best_dm)):
         ne, be = new_dm.get(t) or {}, best_dm.get(t) or {}
         if ne.get("reference") is None or be.get("reference") is None:
+            continue
+        if ne.get("reference_only") or be.get("reference_only"):
             continue
         if (ne.get("n_real") or 0) < MIN_REAL_ROWS or (be.get("n_real") or 0) < MIN_REAL_ROWS:
             continue
@@ -100,12 +105,20 @@ def _fmt(v):
 def gate_v2(rec, best, new_result, best_result, B=200, seed=0):
     """rec: dòng lịch sử của vòng vừa đo. best/best_result: bản tốt nhất đã có (None nếu chưa có vòng nào).
     Trả rec thêm ruler/decision/reasons/compared_to/v2/all_pass, với tác dụng phụ (ghi best.json, lùi núm thử,
-    tuning_memory) như loop_gate v1."""
+    tuning_memory) như loop_gate v1.
+
+    old_ruler (follow-up 7/10, thước THEO LOẠI): ngoài hai lý do cũ (chưa có bản tốt nhất, bản tốt nhất chưa
+    có defect_metrics), còn coi là "thước cũ" khi defect_metrics["ruler"] (định danh sơ đồ chọn vùng, xem
+    evaluate.DEFECT_METRICS_RULER/reference_w0003.RULER_SCHEME_ID) của bản tốt nhất KHÁC vòng hiện tại — số
+    đo hai bên không còn cùng thước, so cặp vô nghĩa, nên đặt mốc mới ngay (nhánh "mốc mới: thước mới" có sẵn)."""
     rec["ruler"] = "v2"
     new_types = (new_result.get("defect_metrics") or {}).get("types") or {}
     rec["all_pass"] = issues_v2.all_pass(new_result)         # thay all_pass v1 (issues.py) khi thước là v2
 
-    old_ruler = best is None or not ((best_result or {}).get("defect_metrics") or {}).get("types")
+    old_ruler = (best is None
+                 or not ((best_result or {}).get("defect_metrics") or {}).get("types")
+                 or (best_result.get("defect_metrics") or {}).get("ruler")
+                 != (new_result.get("defect_metrics") or {}).get("ruler"))
     if old_ruler:
         mean_c2 = _mean_point_c2st(new_types, rec.get("types"))
         _v1._write_best({"iter": rec["iter"], "eval_run": rec["eval_run"], "knobs": rec.get("knobs"),

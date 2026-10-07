@@ -28,6 +28,9 @@ REGISTRY = {
     "post_edge_blur_sigma": (1, "Độ nhoè mép vùng làm tối (σ, điểm ảnh)", 1.0, 5.0, 2.0, 3.0),
     "crack_transverse_share": (2, "Tỉ lệ vết nứt đứng", 0.0, 0.8, 0.0, 0.42),
     "crack_widen_px": (2, "Làm dày vệt nứt tối đa (điểm ảnh)", 0.0, 4.0, 0.0, 2.0),
+    # Độ sâu riêng nứt (0 là dùng chung): 22/40 ca nứt sinh quá nhạt, bộ dò bỏ sót (báo cáo crack-detection-miss 7/10).
+    "crack_post_depth_min": (2, "Nứt: độ sâu làm tối, cận dưới (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
+    "crack_post_depth_max": (2, "Nứt: độ sâu làm tối, cận trên (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
     "pore_aspect_min": (3, "Tỉ lệ trục lỗ khí, cận dưới", 1.0, 3.0, 1.0, 1.5),
     "pore_aspect_max": (3, "Tỉ lệ trục lỗ khí, cận trên", 1.0, 3.0, 1.0, 2.1),
     "pore_axis_jitter_deg": (3, "Độ lệch trục lỗ khí quanh phương ngang (độ)", 0.0, 90.0, 25.0, 25.0),
@@ -40,6 +43,21 @@ REGISTRY = {
     "lop_tilt_max_deg": (4, "Độ nghiêng tối đa dải không thấu (độ)", 0.0, 8.0, 0.0, 4.0),
     "lop_wave_amp_px": (4, "Biên độ lượn dải không thấu (điểm ảnh)", 0.0, 6.0, 0.0, 2.5),
     "lop_gap_max": (4, "Số khoảng đứt tối đa dải không thấu", 0.0, 5.0, 0.0, 3.0),
+    # Thước W0003 16 đặc trưng (báo cáo subagent fullstack-developer-261007, round 18): dải không thấu sinh
+    # NGẮN và TRÒN hơn thật hẳn (xuong_dai thật 1,14 so sinh 0,59; vung_thuon thật 39,8 so sinh 12,3; vung_tron
+    # thật 0,07 so sinh 0,20) — vùng kernel dò được ở ảnh thật dài gần hết ô, sinh thì ngắn/cục hơn. Kéo dài
+    # mặt nạ THEO CHIỀU NGANG quanh tâm khối (giữ bề dày) để nâng độ thuôn. 1,0 = hành vi cũ (không kéo).
+    # CHƯA xác nhận bằng GPU (chỉ suy luận từ đặc trưng + quan sát ảnh), giá trị đề xuất là khởi điểm thận trọng.
+    "lop_length_scale": (4, "Không thấu: hệ số kéo dài dải theo chiều ngang (quanh tâm)", 1.0, 1.8, 1.0, 1.3),
+    # Cùng báo cáo: bien_tuongphan (độ tương phản vùng/nền quanh) là đặc trưng lệch NHIỀU NHẤT (AUC 0,947):
+    # thật gần như không tương phản trung bình (0,004, kernel dò theo cấu trúc Hessian chứ không cần tối sâu),
+    # sinh tương phản rất mạnh (3,66, do dùng chung post_depth_*/post_modulation với các loại khác). Núm độ sâu
+    # RIÊNG (0 là dùng chung) để hạ dần mà KHÔNG kéo tụt tỉ lệ dò được (đã chặn, sinh 0,675 so thật 0,842, cách
+    # 16,7 điểm % > hạn 10). Dò độ nhạy bằng CPU replay (20 ca, sens-20261002-173715): hạ sâu quá tay (<0,15) làm
+    # tỉ lệ dò được rơi dưới 0,2 trong khi tương phản vẫn chưa về gần 0 — không có điểm hạ sâu nào vừa an toàn
+    # cho tỉ lệ dò vừa khớp được tương phản thật; mặc định 0 (dùng chung) tới khi có vòng GPU xác nhận mức an toàn.
+    "lop_post_depth_min": (4, "Không thấu: độ sâu làm tối riêng, cận dưới (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
+    "lop_post_depth_max": (4, "Không thấu: độ sâu làm tối riêng, cận trên (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
     # Độ bám mask của ControlNet (ảnh điều khiển = mask): cao thì mép in đúng mask nhị phân (sắc), thấp thì SD tự do
     # hơn nhưng lỗi có thể lệch nhãn. Mặc định = 0,8 cố định trong workflow. Vòng lặp tự chỉnh (người dùng duyệt
     # 2026-10-02): vòng đầu 0,7; độ dốc biên còn trượt thì −0,05; vùng chạm lỗi tụt dưới 0,7 thì +0,05 (issues._rule).
@@ -69,6 +87,11 @@ REGISTRY = {
     "lof_length_scale": (6, "Không ngấu: tỉ lệ chiều dài dải", 0.2, 1.0, 1.0, 1.0),
     "lof_width_scale": (6, "Không ngấu: tỉ lệ bề dày dải", 0.3, 1.0, 1.0, 1.0),
     "lof_gap_max": (6, "Không ngấu: số khoảng đứt tối đa", 0.0, 5.0, 0.0, 0.0),
+    # Không ngấu vòng 2 (7/10): lof_width_scale hậu kỳ (affine siết quanh tâm toàn khối) đã thử 7 tổ hợp, mọi tổ hợp
+    # đều làm hỏng khả năng phát hiện (dải nghiêng bị siết méo quanh một tâm sai). Núm này co band_width_range GỐC
+    # của bộ sinh (mask_generator/lack-of-fusion-mask-generator.py) TRƯỚC khi vẽ polygon và làm mềm mép, giữ hình
+    # học sắc nét thay vì nội suy affine hậu kỳ. 1.0 = giữ đúng band_width_range gốc (5-12px), hành vi cũ.
+    "lof_band_width_scale": (6, "Không ngấu: co bề rộng dải GỐC tại sinh (lần, trước khi làm mềm mép)", 0.2, 1.0, 1.0, 1.0),
     "controlnet_strength": (1, "Độ bám mask của ControlNet (strength)", 0.3, 1.0, 0.8, 0.7),
 }
 INT_KNOBS = {"lop_gap_max", "lof_gap_max"}
@@ -136,7 +159,8 @@ def resolve(store="production", use_env=True):
     for a, b in (("post_depth_min", "post_depth_max"), ("pore_aspect_min", "pore_aspect_max"),
                  ("linear_pore_aspect_min", "linear_pore_aspect_max"), ("pore_post_depth_min", "pore_post_depth_max"),
                  ("clustered_post_depth_min", "clustered_post_depth_max"), ("linear_post_depth_min", "linear_post_depth_max"),
-                 ("slag_post_depth_min", "slag_post_depth_max"), ("ecav_post_depth_min", "ecav_post_depth_max")):
+                 ("slag_post_depth_min", "slag_post_depth_max"), ("ecav_post_depth_min", "ecav_post_depth_max"),
+                 ("lop_post_depth_min", "lop_post_depth_max"), ("crack_post_depth_min", "crack_post_depth_max")):
         if out[a]["value"] > out[b]["value"]:                  # cận dưới vượt cận trên: đổi chỗ, không ném lỗi
             out[a], out[b] = out[b], out[a]
     return out

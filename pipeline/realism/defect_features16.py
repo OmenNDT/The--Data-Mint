@@ -82,11 +82,66 @@ def kernel_mask(img, thr, min_area=25):
     return keep[lab]
 
 
-def _shape(m, diff, mag, noise):
+# Ngưỡng loại "đường biên mép hàn" (bước 2, plan 261006): chọn từ dữ liệu, xem báo cáo subagent
+# fullstack-developer-261007 — kiểm trên W0003 thật (would_lose tối thiểu, chỉ LOP/Crack/Slag mất vài ca vì
+# bản chất lỗi đó CŨNG là đường dài sát biên) và trên ảnh sinh porosity/lack_of_fusion (porosity bắt đúng lỗ
+# khí thay vì mép hàn, on_target +2 điểm %; LOF gần như không đổi vì lỗi đó tự nhiên dài, không trùng mẫu mép hàn).
+BORDER_MARGIN = 20      # viền ảnh (điểm ảnh) coi là "chạm mép"; tính từ viền σ riêng kernel (8–16) + đệm quan sát
+BORDER_ASPECT_MIN = 3.0  # tỉ lệ trục dài/ngắn tối thiểu để coi là "đường dài" (không phải đốm tròn/bầu)
+BORDER_SPAN_MIN = 0.85   # khung vùng phải trải ít nhất 85% cạnh ảnh theo trục dài của nó
+
+
+def _is_border_line(p, shape, margin=BORDER_MARGIN, aspect_min=BORDER_ASPECT_MIN, span_min=BORDER_SPAN_MIN):
+    """True nếu vùng `p` giống một đoạn mép hàn: đường dài (aspect >= aspect_min) trải gần hết một cạnh ảnh
+    (span >= span_min theo trục đó) VÀ chạm cả hai lề của trục đó. Dùng để loại trước khi chọn vùng lớn nhất
+    (bước 2 plan 261006: tách biệt vùng lỗi thật khỏi đường mép hàn dài chạy ngang/dọc hết khung)."""
+    minr, minc, maxr, maxc = p.bbox
+    h, w = shape
+    aspect = p.axis_major_length / max(p.axis_minor_length, 1)
+    if aspect < aspect_min:
+        return False
+    width_span, height_span = (maxc - minc) / w, (maxr - minr) / h
+    if width_span >= height_span:
+        return width_span >= span_min and (minc <= margin or maxc >= w - margin)
+    return height_span >= span_min and (minr <= margin or maxr >= h - margin)
+
+
+# Ngưỡng loại "dải mép trên/dưới tile" (ruler v3, follow-up 7/10: crack/lack_of_penetration thật dài TỰ NHIÊN,
+# _is_border_line (v2, đòi span>=85% VÀ chạm lề TRÁI/PHẢI) loại nhầm lỗi thật chạy ngang qua GIỮA tile — xem
+# plans/261006-defect-metrics-w0003-reference/reports/fullstack-developer-261007-1228-lop-feature-deviation.md
+# mục 0 + ảnh lop-real-region-overlay-261007.png: dải sáng/tối do chiếu sáng không đều nằm SÁT HÀNG 0 hoặc
+# HÀNG CUỐI (cách mép 7-8px trong mẫu thật), không liên quan tới có chạm lề trái/phải hay trải bao xa theo
+# chiều ngang. v3 chỉ xét VỊ TRÍ HÀNG (minr/maxr so biên trên/dưới), bỏ hẳn điều kiện span+chạm lề ngang của
+# v2 — nhờ vậy giữ được lỗi dài nằm giữa tile (hàng tâm, xem báo cáo subagent fullstack-developer-261007-14xx).
+EDGE_BAND_MARGIN = 20       # khớp BORDER_MARGIN: viền σ kernel (8-16) + đệm; dải nhiễu quan sát được cách mép 7-8px
+EDGE_BAND_ASPECT_MIN = 3.0  # khớp BORDER_ASPECT_MIN: chỉ loại đường dài, không loại đốm compact tình cờ gần mép
+                            # (vd W0003_0043_tile_25: đốm nhỏ aspect 1,4 cách mép dưới 14px — GIỮ LẠI, không phải dải mép)
+
+
+def _is_edge_band_line(p, shape, margin=EDGE_BAND_MARGIN, aspect_min=EDGE_BAND_ASPECT_MIN):
+    """True nếu vùng `p` là dải dài nằm trong `margin` điểm ảnh của hàng 0 hoặc hàng cuối (rìa TRÊN/DƯỚI tile):
+    đường dài (aspect >= aspect_min) VÀ (minr <= margin HOẶC hàng cuối của vùng cách đáy ảnh <= margin). KHÔNG
+    đòi trải rộng theo chiều ngang hay chạm lề trái/phải (khác _is_border_line) — xem ghi chú EDGE_BAND_* ở trên."""
+    minr, _, maxr, _ = p.bbox
+    h, _ = shape
+    aspect = p.axis_major_length / max(p.axis_minor_length, 1)
+    if aspect < aspect_min:
+        return False
+    return minr <= margin or (h - 1 - maxr) <= margin
+
+
+def _shape(m, diff, mag, noise, exclude_border=False, exclude_edge_band=False):
     """Chép nguyên văn feature_bank._shape: họ hình dạng (12) và họ biên (4) trên vùng nghi lỗi lớn nhất của `m`
-    (số đốm vung_sodom tính trên toàn mặt nạ). Không sửa công thức — phải khớp v2-kernel/features.csv."""
+    (số đốm vung_sodom tính trên toàn mặt nạ, hoặc trên phần còn lại sau khi loại đường mép hàn/dải mép rìa).
+    Không sửa công thức khi cả hai cờ đều False — phải khớp v2-kernel/features.csv. Hai cờ loại trừ lẫn nhau
+    về Ý NGHĨA thước (ruler v2 dùng exclude_border, ruler v3 dùng exclude_edge_band) nhưng độc lập về code,
+    có thể bật cả hai nếu sau này cần (áp dụng hợp của hai điều kiện loại bỏ)."""
     lab = label(m)
     props = sorted(regionprops(lab), key=lambda p: p.area, reverse=True)
+    if exclude_border:
+        props = [p for p in props if not _is_border_line(p, m.shape)]
+    if exclude_edge_band:
+        props = [p for p in props if not _is_edge_band_line(p, m.shape)]
     circ = [4 * np.pi * p.area / max(p.perimeter, 1) ** 2 for p in props]
     sh = dict(vung_tile=m.mean(), vung_sodom=len(props), vung_trontb=np.mean(circ) if circ else 0.0)
     bd = dict(bien_tuongphan=0.0, bien_doc=0.0, bien_daodong=0.0, bien_sau=0.0)
@@ -108,18 +163,24 @@ def _shape(m, diff, mag, noise):
     else:
         sh.update(vung_lon=0.0, vung_tron=0.0, vung_lechtam=0.0, vung_thuon=1.0, vung_huong=0.0,
                   vung_dac=0.0, vung_dayhop=0.0, xuong_dai=0.0, xuong_renhanh=0)
-    return {**sh, **bd}
+        obj = None
+    return {**sh, **bd}, obj
 
 
-def defect_features(img, thr):
-    """img: mảng float32 thang 0..255. thr: ngưỡng 3 kernel (dict). Trả về dict 16 đặc trưng + has_region
-    (1.0 nếu vung_sodom > 0, tức kernel bắt được ít nhất một vùng nghi lỗi)."""
+def defect_features(img, thr, exclude_border=False, exclude_edge_band=False, return_region=False):
+    """img: mảng float32 thang 0..255. thr: ngưỡng 3 kernel (dict). exclude_border: loại đường mép hàn kiểu v2
+    (xem _is_border_line). exclude_edge_band: loại dải rìa trên/dưới kiểu v3 (xem _is_edge_band_line). Cả hai
+    mặc định False giữ đúng hành vi ruler v1 hiện hành. Trả về dict 16 đặc trưng + has_region (1.0 nếu
+    vung_sodom > 0, tức kernel bắt được ít nhất một vùng nghi lỗi sau khi lọc). return_region=True: trả thêm
+    mặt nạ bool của vùng được chọn (None nếu không có vùng), dùng cho độ đo "đúng đối tượng" (bước 1 plan
+    261006) so khớp với mặt nạ lỗi thật trên ảnh sinh."""
     img = np.asarray(img, dtype=np.float32)
     _, diff, sd = suspect_mask(img)
     m = kernel_mask(img, thr)
     s = ndi.gaussian_filter(img, 1.0)
     gx, gy = ndi.sobel(s, 1), ndi.sobel(s, 0)
     mag = np.hypot(gx, gy)
-    f = {k: float(v) for k, v in _shape(m, diff, mag, sd).items()}
+    raw, region = _shape(m, diff, mag, sd, exclude_border=exclude_border, exclude_edge_band=exclude_edge_band)
+    f = {k: float(v) for k, v in raw.items()}
     f["has_region"] = 1.0 if f["vung_sodom"] > 0 else 0.0
-    return f
+    return (f, region) if return_region else f

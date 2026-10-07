@@ -99,12 +99,24 @@ def _generate_mask_worker(
         except Exception:
             weld_center_y = resolution // 2
 
+    # Realism loop: băng rộng dải không ngấu điều chỉnh TẠI SINH theo núm lof_band_width_scale (mặc định: {}, không
+    # đổi gì). Khác shape_generated_mask dưới đây (tạo hình lại mask ĐÃ sinh): đây sửa kwargs của bộ sinh trước khi
+    # vẽ polygon, giữ mép sắc nét. Xem realism/generator_hooks.lof_generation_kwargs.
+    extra_kwargs = {}
+    if defect_type == "lack_of_fusion":
+        try:
+            from realism.generator_hooks import lof_generation_kwargs
+            extra_kwargs = lof_generation_kwargs()
+        except Exception:  # realism module missing or broken: giữ band_width_range gốc của bộ sinh
+            extra_kwargs = {}
+
     # Generate mask
     generator = generators[defect_type](
         height=resolution,
         width=resolution,
         seed=seed,
-        weld_center_y=weld_center_y
+        weld_center_y=weld_center_y,
+        **extra_kwargs
     )
     binary_mask, feathered_mask = generator.generate()
 
@@ -114,7 +126,7 @@ def _generate_mask_worker(
         binary_mask, feathered_mask = shape_generated_mask(
             defect_type, seed, binary_mask, feathered_mask,
             regenerate=lambda s: generators[defect_type](
-                height=resolution, width=resolution, seed=s, weld_center_y=weld_center_y).generate(),
+                height=resolution, width=resolution, seed=s, weld_center_y=weld_center_y, **extra_kwargs).generate(),
             weld_center_y=weld_center_y)
     except Exception:  # realism module missing or broken: keep the generator's own mask
         pass

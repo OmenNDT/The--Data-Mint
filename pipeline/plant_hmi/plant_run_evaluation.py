@@ -64,12 +64,13 @@ def _defect_metrics_summary(result: Dict) -> Dict:
     for defect_type, e in (dm.get("types") or {}).items():
         if not e.get("n_syn"):
             continue
-        row = {"defect_type": defect_type, "reference": e.get("reference"),
+        row = {"defect_type": defect_type, "reference": e.get("reference"), "ruler": e.get("ruler"),
                "n_real": e.get("n_real"), "n_syn": e.get("n_syn"),
                "detection_rate_real": e.get("detection_rate_real"), "detection_rate_syn": e.get("detection_rate_syn"),
                "c2st": e.get("c2st"), "c2st_reason": e.get("c2st_reason"),
                "kid": e.get("kid"), "density_coverage": e.get("density_coverage"),
-               "small_reference": e.get("small_reference", False)}
+               "small_reference": e.get("small_reference", False), "reference_only": e.get("reference_only", False),
+               "on_target": e.get("on_target")}
         null = e.get("null") or {}
         row["perfect"] = {"c2st": (null.get("c2st") or {}).get("median") if null else None,
                            "kid": (null.get("kid") or {}).get("median") if null else None,

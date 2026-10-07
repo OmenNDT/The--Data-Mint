@@ -1,0 +1,186 @@
+{
+ "clustered_porosity": {
+  "null": {
+   "c2st": null,
+   "kid": null,
+   "density": {
+    "median": 1.0,
+    "p5": 0.0,
+    "p95": 2.0
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 0.0,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 5
+ },
+ "crack": {
+  "null": {
+   "c2st": {
+    "median": 0.4409722222222222,
+    "p5": 0.2878472222222222,
+    "p95": 0.746875
+   },
+   "kid": {
+    "median": -0.030634476994102933,
+    "p5": -0.469399444708711,
+    "p95": 0.4985835882232657
+   },
+   "density": {
+    "median": 1.0,
+    "p5": 0.715,
+    "p95": 1.3258333333333332
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 0.9166666666666666,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 24
+ },
+ "elongated_cavity": {
+  "null": {
+   "c2st": null,
+   "kid": null,
+   "density": {
+    "median": 1.0666666666666667,
+    "p5": 0.36333333333333334,
+    "p95": 1.3333333333333333
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 0.75,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 9
+ },
+ "lack_of_fusion": {
+  "null": {
+   "c2st": {
+    "median": 0.485,
+    "p5": 0.309,
+    "p95": 0.7409999999999999
+   },
+   "kid": {
+    "median": -0.009333736510592328,
+    "p5": -0.41593329188092965,
+    "p95": 0.46786227753840015
+   },
+   "density": {
+    "median": 0.99,
+    "p5": 0.607,
+    "p95": 1.4709999999999999
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 1.0,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 20
+ },
+ "lack_of_penetration": {
+  "null": {
+   "c2st": null,
+   "kid": null,
+   "density": {
+    "median": 1.0,
+    "p5": 0.5,
+    "p95": 1.5
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 0.6666666666666666,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 7
+ },
+ "linear_porosity": {
+  "null": {
+   "c2st": null,
+   "kid": {
+    "median": 0.009935923256475965,
+    "p5": -0.8437309336937601,
+    "p95": 1.1956142656013418
+   },
+   "density": {
+    "median": 1.0,
+    "p5": 0.7,
+    "p95": 1.2274999999999998
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 1.0,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 10
+ },
+ "linear_slag_inclusion": {
+  "null": null,
+  "n_real": 0
+ },
+ "metallic_inclusion": {
+  "null": null,
+  "n_real": 3
+ },
+ "porosity": {
+  "null": {
+   "c2st": {
+    "median": 0.4666666666666667,
+    "p5": 0.3233333333333333,
+    "p95": 0.6502380952380953
+   },
+   "kid": {
+    "median": -0.013047097354329074,
+    "p5": -0.37541080089022266,
+    "p95": 0.767226600873316
+   },
+   "density": {
+    "median": 0.8866666666666667,
+    "p5": 0.5866666666666667,
+    "p95": 1.416
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 0.9285714285714286,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 29
+ },
+ "slag_inclusion": {
+  "null": {
+   "c2st": null,
+   "kid": {
+    "median": -0.019139679563245693,
+    "p5": -0.8170564295245147,
+    "p95": 1.2027009446643167
+   },
+   "density": {
+    "median": 1.0666666666666667,
+    "p5": 0.73,
+    "p95": 1.1849999999999998
+   },
+   "coverage": {
+    "median": 1.0,
+    "p5": 1.0,
+    "p95": 1.0
+   },
+   "method": "chia đôi ảnh thật, hai nửa tách rời"
+  },
+  "n_real": 12
+ }
+}

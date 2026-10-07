@@ -151,5 +151,38 @@ class MergeDefectMetrics(unittest.TestCase):
         self.assertEqual(m["defect_metrics"]["types"], {"porosity": {"c2st": 0.6}, "crack": {"c2st": 0.8}})
 
 
+class PlanCycleRulerOutdated(unittest.TestCase):
+    """Follow-up 7/10 (thước theo loại): bản tốt nhất đo bằng sơ đồ ruler KHÁC hiện hành -> sinh lại TẤT
+    CẢ loại được chọn, không mang theo loại nào (dù núm không đổi, dù bản tốt nhất đã đủ n ca)."""
+
+    def _best(self):
+        return {"iter": 7, "eval_run": "ev7", "knobs": {k: {"value": v} for k, v in BASE.items()}}
+
+    def test_different_ruler_regenerates_all_even_with_matching_coverage_and_no_knob_change(self):
+        old_result = {"defect_metrics": {"ruler": "thuoc-cu", "types": {}}}
+        with mock.patch.object(loop_partial.loop_gate, "read_best", return_value=self._best()), \
+                mock.patch.object(loop_partial, "read_json", return_value=old_result):
+            gen, reused, best = loop_partial.plan_cycle(BASE, TYPES, 20)   # núm KHÔNG đổi, n khớp
+        self.assertEqual((gen, reused), (TYPES, []))
+        self.assertEqual(best["iter"], 7)
+
+    def test_same_ruler_does_not_force_full_regen(self):
+        from realism.loop_partial import DEFECT_METRICS_RULER
+        same_result = {"defect_metrics": {"ruler": DEFECT_METRICS_RULER, "types": {}},
+                        "coverage": {t: 20 for t in TYPES}}
+        with mock.patch.object(loop_partial.loop_gate, "read_best", return_value=self._best()), \
+                mock.patch.object(loop_partial, "read_json", return_value=same_result):
+            gen, reused, _ = loop_partial.plan_cycle(BASE, TYPES, 20)      # núm không đổi, n khớp -> dùng lại hết
+        self.assertEqual((gen, reused), ([], TYPES))
+
+    def test_missing_ruler_on_best_does_not_force_full_regen(self):
+        """Bản tốt nhất rất cũ, chưa từng có defect_metrics (ruler=None): KHÔNG coi là lỗi thời, giữ hành vi
+        gốc dựa trên fixed-jobs.json/coverage (xem _best_ruler_outdated)."""
+        with mock.patch.object(loop_partial.loop_gate, "read_best", return_value=self._best()), \
+                mock.patch.object(loop_partial, "read_json", return_value={"coverage": {t: 20 for t in TYPES}}):
+            gen, reused, _ = loop_partial.plan_cycle(BASE, TYPES, 20)
+        self.assertEqual((gen, reused), ([], TYPES))
+
+
 if __name__ == "__main__":
     unittest.main()

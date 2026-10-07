@@ -52,6 +52,11 @@ def effective_knobs(knobs, defect_type):
         # Vòng sau (7/10): xỉ và rỗ khí kéo dài hình dạng đã tốt lên nhưng còn quá nhạt.
         "slag_inclusion": ("slag_post_depth_min", "slag_post_depth_max"),
         "elongated_cavity": ("ecav_post_depth_min", "ecav_post_depth_max"),
+        # Không thấu: độ sâu riêng (báo cáo fullstack-developer-261007, bien_tuongphan lệch nhiều nhất); mặc định
+        # 0 (dùng chung) tới khi có vòng GPU xác nhận mức an toàn cho tỉ lệ dò được (xem knobs.py REGISTRY).
+        "lack_of_penetration": ("lop_post_depth_min", "lop_post_depth_max"),
+        # Nứt: 22/40 ca sinh quá nhạt (tương phản ~1x nhiễu nền) nên bộ dò bỏ sót (báo cáo crack-detection-miss 7/10).
+        "crack": ("crack_post_depth_min", "crack_post_depth_max"),
     }
     if defect_type == "linear_porosity" and knobs.get("linear_post_modulation", -1.0) >= 0:
         # Độ thay đổi độ sâu riêng cho rỗ khí chuỗi (-1 là dùng chung): tắt nó giúp chuỗi rõ (nhánh A, 6/10).

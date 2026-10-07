@@ -12,7 +12,12 @@ thước v2, và để trang Độ thật hiện bảng mục tiêu pass/fail c�
 
 Loại chưa có mẫu thật W0003 (reference=None) hoặc chưa tính được null (W0003 dưới 4 mẫu, xem
 reference_w0003_null.MIN_ROWS) trả targets rỗng: chỉ báo, không chặn all_pass.
-"""
+
+Loại "chỉ tham khảo" (reference_only=True, xem defect_eval.REFERENCE_ONLY_TYPES — hiện chỉ metallic_inclusion,
+3 ảnh thật, bộ dò tìm vùng tối không đo được lỗi sáng hơn nền) cũng trả targets rỗng dù reference không None:
+trước đây chỉ bị bỏ qua NGẦM vì n_real=3 dưới MIN_REAL_ROWS của loop_gate_v2, nhưng detection_gap ở ĐÂY tính
+trực tiếp từ detection_rate_real/syn (không qua null) nên KHÔNG tự động None — phải loại rõ, không thì cổng
+ăn nhầm một mục tiêu tính trên 3 mẫu (bước 3, plan 261006-defect-metrics-w0003-reference)."""
 
 TARGET_LABELS = {
     "detection_gap": "Tỉ lệ tách vùng kém thật không quá 10 điểm %",
@@ -30,8 +35,8 @@ def _target(name, value, lo=None, hi=None):
 
 def evaluate_type(entry):
     """[{name,label,value,lo,hi,pass}, ...] cho một mục defect_metrics["types"][loại]. Loại chưa có tham chiếu
-    W0003 (reference=None) → [] (chỉ báo, không có mục tiêu)."""
-    if not entry or entry.get("reference") is None:
+    W0003 (reference=None) hoặc chỉ tham khảo (reference_only=True) → [] (chỉ báo, không có mục tiêu)."""
+    if not entry or entry.get("reference") is None or entry.get("reference_only"):
         return []
     null = entry.get("null") or {}
     det_real, det_syn = entry.get("detection_rate_real"), entry.get("detection_rate_syn")
@@ -50,9 +55,13 @@ def evaluate_type(entry):
 
 
 def evaluate_v2(result):
-    """{loại: [targets]} cho mọi loại CÓ tham chiếu W0003 trong result["defect_metrics"]["types"]."""
+    """{loại: [targets]} cho mọi loại CÓ tham chiếu W0003 VÀ KHÔNG chỉ tham khảo (reference_only) trong
+    result["defect_metrics"]["types"]. Loại bỏ hẳn reference_only khỏi dict (không chỉ trả targets rỗng):
+    all_pass coi targets=[] là "không đo được mục tiêu nào" → trượt, nên phải loại khỏi dict để không ăn
+    nhầm (bước 3, plan 261006-defect-metrics-w0003-reference)."""
     types = ((result or {}).get("defect_metrics") or {}).get("types") or {}
-    return {t: evaluate_type(e) for t, e in types.items() if (e or {}).get("reference") is not None}
+    return {t: evaluate_type(e) for t, e in types.items()
+            if (e or {}).get("reference") is not None and not (e or {}).get("reference_only")}
 
 
 def all_pass(result):
