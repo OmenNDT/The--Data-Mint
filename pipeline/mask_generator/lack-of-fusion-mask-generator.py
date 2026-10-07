@@ -1,14 +1,28 @@
 """
-Lack of Fusion (LoF) defect mask generator.
+Lack of Fusion (LoF) and Lack of Penetration (LoP) defect mask generators.
 
-Generates linear indications along weld fusion boundaries.
-Morphology: parallel lines near weld edges, slight waviness.
+LoF morphology: filled flat band along the fusion boundary (OFF-center).
+  - One sharp/straight edge (the unbonded fusion face)
+  - Other edge slightly wavy (diffuse boundary)
+  - Band width 5-12px, slight tilt, placed at groove wall
+  - Visually: a short flat dark stripe at the SIDE of the weld
+
+LoP morphology: thin, nearly-continuous narrow band at the weld ROOT (center).
+  - 2-4px thick, nearly horizontal (±1.5px waviness max)
+  - Sits at the weld CENTERLINE — NOT offset like LoF
+  - More continuous, minimal gaps
+
+Both are visually distinct from crack:
+  - Crack: zigzag random walk, hairline, can branch
+  - LoF: filled flat band off-center, asymmetric edges
+  - LoP: straight thin line dead-center, near-zero waviness
 """
 
 import numpy as np
 import cv2
 from typing import Tuple
 from importlib import import_module
+from scipy.ndimage import uniform_filter1d
 
 base_module = import_module('.base-defect-mask-generator', package='mask_generator')
 feathering_module = import_module('.feathering-utility', package='mask_generator')
@@ -18,74 +32,149 @@ feather_mask = feathering_module.feather_mask
 
 
 class LackOfFusionMaskGenerator(DefectMaskGenerator):
-    """Generator for lack of fusion defect masks."""
+    """
+    Generator for lack of fusion defect masks.
+
+    Draws a filled flat band at the fusion boundary (side of weld).
+    Uses fillPoly to create a parallelogram-like shape:
+      - Fusion face (base-metal side): straight/smooth edge
+      - Open face (weld-metal side): slightly wavy edge
+    Band width 5-12px makes it visually distinct from hairline cracks.
+    """
 
     def __init__(
         self,
         height: int = 512,
         width: int = 512,
         seed: int = None,
-        length_pct_range: Tuple[float, float] = (0.2, 0.6),
-        thickness_range: Tuple[int, int] = (2, 5),
-        position: str = "fusion_boundary",
-        wave_amplitude: float = 3.0,
-        wave_frequency: float = 0.05,
+        length_pct_range: Tuple[float, float] = (0.25, 0.55),
+        band_width_range: Tuple[int, int] = (5, 12),
+        tilt_range: float = 20.0,
         **kwargs
     ):
         """
-        Initialize lack of fusion mask generator.
-
         Args:
-            length_pct_range: Line length as fraction of image width
-            thickness_range: Line thickness in pixels
-            position: "fusion_boundary" (top/bottom edge) or "center"
-            wave_amplitude: Sine wave amplitude for waviness
-            wave_frequency: Sine wave frequency (cycles per pixel)
+            length_pct_range: Defect length as fraction of image width
+            band_width_range: Band thickness in pixels (5-12px, NOT hairline)
+            tilt_range: Max tilt of defect in pixels over its full length
         """
         super().__init__(height, width, seed, **kwargs)
         self.length_pct_range = length_pct_range
-        self.thickness_range = thickness_range
-        self.position = position
-        self.wave_amplitude = wave_amplitude
-        self.wave_frequency = wave_frequency
+        self.band_width_range = band_width_range
+        self.tilt_range = tilt_range
 
     def generate(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate lack of fusion mask with wavy line."""
+        """Generate LoF mask: filled flat band at fusion boundary."""
         mask = self._create_blank_mask()
 
-        # Random parameters
-        length_pct = self.rng.uniform(self.length_pct_range[0], self.length_pct_range[1])
+        # Off-center placement: groove wall (13-20% from weld center)
+        side = 1 if self.rng.random() < 0.5 else -1
+        fusion_offset = int(self.height * self.rng.uniform(0.13, 0.20))
+        center_y = int(np.clip(
+            self.weld_center_y + side * fusion_offset, 20, self.height - 20
+        ))
+
+        # Length and start position
+        length_pct = self.rng.uniform(*self.length_pct_range)
+        length = int(self.width * length_pct)
+        x_start = int(self.rng.integers(20, max(21, self.width - length - 20)))
+        x_end = x_start + length
+
+        # Band width (5-12px — clearly wider than crack hairline)
+        band_w = int(self.rng.integers(*self.band_width_range))
+
+        # Slight tilt: y displacement over full length (follows groove angle)
+        tilt_dy = int(self.rng.uniform(-self.tilt_range, self.tilt_range))
+
+        n_pts = 40
+        xs = np.linspace(x_start, x_end, n_pts)
+
+        # Fusion face: straight, minimal noise (the unbonded metal face — sharp in RT)
+        fusion_ys = np.linspace(center_y, center_y + tilt_dy, n_pts)
+        # Small sharp noise on fusion face (±1px)
+        fn = self.rng.standard_normal(n_pts)
+        fn_smooth = uniform_filter1d(fn, size=8)
+        fusion_ys += (fn_smooth / (fn_smooth.std() + 1e-8)) * 1.0
+
+        # Open face: parallel to fusion face + ±2px roughness (diffuse boundary)
+        noise = self.rng.standard_normal(n_pts)
+        noise_smooth = uniform_filter1d(noise, size=5)
+        noise_scaled = (noise_smooth / (noise_smooth.std() + 1e-8)) * 2.0
+        open_ys = fusion_ys + side * band_w + noise_scaled
+
+        # Clamp both edges
+        fusion_ys = np.clip(fusion_ys, 3, self.height - 3)
+        open_ys = np.clip(open_ys, 3, self.height - 3)
+
+        # Closed polygon: fusion face forward → open face backward
+        fusion_pts = [(int(xs[i]), int(fusion_ys[i])) for i in range(n_pts)]
+        open_pts = [(int(xs[i]), int(open_ys[i])) for i in range(n_pts - 1, -1, -1)]
+        polygon = np.array(fusion_pts + open_pts, dtype=np.int32)
+        cv2.fillPoly(mask, [polygon], 255)
+
+        # Light feather — keep edges visible (2px blur, not 5px)
+        feathered = feather_mask(mask, blur_radius=2)
+        return mask, feathered
+
+
+class LackOfPenetrationMaskGenerator(DefectMaskGenerator):
+    """
+    Generator for lack of penetration defect masks.
+
+    Draws a thin, nearly-continuous line at the weld ROOT (centerline).
+    Key differences from crack:
+      - AT CENTERLINE (not offset like LoF)
+      - Minimal waviness ±1.5px (crack uses random walk ±20° per segment)
+      - More continuous (very short gaps 0-3px)
+      - Slightly filled (2-4px) vs crack's 1-2px hairline
+    """
+
+    def __init__(
+        self,
+        height: int = 512,
+        width: int = 512,
+        seed: int = None,
+        length_pct_range: Tuple[float, float] = (0.35, 0.70),
+        thickness_range: Tuple[int, int] = (2, 4),
+        **kwargs
+    ):
+        super().__init__(height, width, seed, **kwargs)
+        self.length_pct_range = length_pct_range
+        self.thickness_range = thickness_range
+
+    def generate(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate LoP mask: thin straight band at weld root (centerline)."""
+        mask = self._create_blank_mask()
+
+        length_pct = self.rng.uniform(*self.length_pct_range)
         line_length = int(self.width * length_pct)
-        thickness = self.rng.integers(self.thickness_range[0], self.thickness_range[1] + 1)
+        start_x = int(self.rng.integers(15, max(16, self.width - line_length - 15)))
 
-        # Starting position
-        start_x = self.rng.integers(0, self.width - line_length)
+        # LoP at weld centerline — only tiny root offset (0-4% of height)
+        root_offset = int(self.height * self.rng.uniform(0.0, 0.04))
+        base_y = int(np.clip(self.weld_center_y + root_offset, 10, self.height - 10))
 
-        # Y position (fusion boundary - top or bottom of weld zone)
-        if self.position == "fusion_boundary":
-            # Choose top or bottom edge of weld zone
-            if self.rng.random() < 0.5:
-                base_y = int(self.height * 0.35)  # Top boundary
-            else:
-                base_y = int(self.height * 0.65)  # Bottom boundary
-        else:
-            base_y = self.height // 2
+        # Perfectly straight — no waviness (LOP = root gap, mechanical straight line)
+        y_offsets = np.zeros(line_length)
 
-        # Generate wavy line points
-        points = []
-        for i in range(line_length):
-            x = start_x + i
-            # Add sine wave perturbation
-            y_offset = self.wave_amplitude * np.sin(2 * np.pi * self.wave_frequency * i)
-            y = int(base_y + y_offset + self.rng.uniform(-2, 2))  # Add random noise
-            y = np.clip(y, 0, self.height - 1)
-            points.append([x, y])
+        thickness = int(self.rng.integers(*self.thickness_range))
 
-        # Draw polyline
-        points_array = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
-        cv2.polylines(mask, [points_array], isClosed=False, color=255, thickness=thickness)
+        # Nearly-continuous: long segments (30-80px), tiny gaps (0-3px)
+        i = 0
+        while i < line_length:
+            seg_len = int(self.rng.integers(30, 80))
+            gap_len = int(self.rng.integers(0, 4))
+            seg_end = min(i + seg_len, line_length)
+            if seg_end > i + 2:
+                pts = []
+                for j in range(i, seg_end):
+                    x = start_x + j
+                    y = int(np.clip(base_y + y_offsets[j], 3, self.height - 3))
+                    pts.append([x, y])
+                pts_arr = np.array(pts, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(mask, [pts_arr], isClosed=False, color=255, thickness=thickness)
+            i += seg_len + gap_len
 
-        # Create feathered version
-        feathered = feather_mask(mask, blur_radius=4)
-
+        # Maximum feathering → LOP appears as very soft, diffuse linear shadow
+        feathered = feather_mask(mask, blur_radius=40)
         return mask, feathered

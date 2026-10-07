@@ -1,0 +1,43 @@
+comfyui:
+  host: 127.0.0.1
+  port: 8188
+  prompts_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/riawelc-prompt-templates.yaml
+  workflow_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/sd15-lora-controlnet-inpaint-batch-api-workflow.json
+generation:
+  defect_distribution:
+    crack: 0.333
+    porosity: 0.333
+    lack_of_penetration: 0.334
+  resolution: 512
+  total_images: 300
+lora_models:
+  crack: xray_crack_riawelc_lora_r32.safetensors
+  porosity: xray_porosity_riawelc_lora_r32.safetensors
+  lack_of_penetration: xray_lop_riawelc_lora_r32.safetensors
+output:
+  organize_by_defect: true
+  save_masks: true
+  save_metadata: true
+paths:
+  backgrounds_dir: /home/sontn/Projects/The Data Mint/dataset/processed/patches_512_Confimed/clean
+  checkpoint_dir: /home/sontn/Projects/The Data Mint/pipeline/checkpoints
+  logs_dir: /home/sontn/Projects/The Data Mint/pipeline/logs
+  output_base_dir: /home/sontn/Projects/The Data Mint/output/synthetic-riawelc-pilot300
+performance:
+  mask_prefetch_count: 50
+  mask_prefetch_workers: 8
+reliability:
+  checkpoint_interval: 100
+  max_retries: 3
+  retry_delay_seconds: 5
+  timeout_seconds: 300
+sampler:
+  cfg: 9.0
+  name: euler
+  scheduler: normal
+  steps: 25
+thermal:
+  check_interval_seconds: 30
+  enabled: true
+  max_temp_celsius: 85
+  resume_temp_celsius: 75

@@ -20,9 +20,37 @@ from pathlib import Path
 import yaml
 
 
-def validate_workflow_json(workflow_path: Path) -> bool:
-    """Validate workflow JSON syntax and structure."""
-    print(f"\n[TEST] Validating workflow: {workflow_path.name}")
+# Các nút bắt buộc chung cho mọi quy trình inpaint.
+BASE_REQUIRED_NODES = [
+    "CheckpointLoaderSimple",
+    "LoraLoader",
+    "KSampler",
+    "VAEDecode",
+    "SaveImage",
+]
+
+# Hai quy trình đi theo hai cách đưa mặt nạ vào mô hình nên đòi nhóm nút khác nhau.
+# Quy trình sản xuất hàng loạt dùng ControlNet; quy trình một ảnh đã chuyển sang
+# VAEEncode cộng SetLatentNoiseMask và bỏ ControlNet (xem mục 3.5.1 của báo cáo).
+CONTROLNET_NODES = [
+    "ControlNetLoader",
+    "InpaintModelConditioning",
+    "ControlNetApplyAdvanced",
+]
+LATENT_MASK_NODES = [
+    "VAEEncode",
+    "SetLatentNoiseMask",
+]
+
+
+def validate_workflow_json(workflow_path: Path, mask_path: str = "controlnet") -> bool:
+    """Validate workflow JSON syntax and structure.
+
+    Args:
+        workflow_path: đường dẫn tệp đồ thị nút JSON.
+        mask_path: "controlnet" hoặc "latent_mask", quyết định nhóm nút bắt buộc.
+    """
+    print(f"\n[TEST] Validating workflow: {workflow_path.name} ({mask_path})")
 
     try:
         with open(workflow_path, "r") as f:
@@ -38,16 +66,8 @@ def validate_workflow_json(workflow_path: Path) -> bool:
     print(f"  ✓ Valid JSON with {len(workflow)} nodes")
 
     # Check required nodes
-    required_nodes = {
-        "CheckpointLoaderSimple": False,
-        "LoraLoader": False,
-        "ControlNetLoader": False,
-        "InpaintModelConditioning": False,
-        "ControlNetApplyAdvanced": False,
-        "KSampler": False,
-        "VAEDecode": False,
-        "SaveImage": False,
-    }
+    extra = CONTROLNET_NODES if mask_path == "controlnet" else LATENT_MASK_NODES
+    required_nodes = {name: False for name in BASE_REQUIRED_NODES + extra}
 
     for node_id, node_data in workflow.items():
         class_type = node_data.get("class_type")
@@ -222,7 +242,8 @@ def main():
     # Test 1: Single image workflow
     single_workflow = workflows_dir / "sd15-lora-controlnet-inpaint-single-defect-workflow.json"
     if single_workflow.exists():
-        tests.append(("Single Workflow JSON", validate_workflow_json(single_workflow)))
+        tests.append(("Single Workflow JSON",
+                      validate_workflow_json(single_workflow, mask_path="latent_mask")))
         tests.append(("Single Workflow Models", validate_model_paths(single_workflow)))
         tests.append(("Single Workflow Sampler", validate_sampler_settings(single_workflow)))
     else:

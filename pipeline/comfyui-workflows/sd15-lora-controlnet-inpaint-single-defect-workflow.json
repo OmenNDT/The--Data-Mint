@@ -18,14 +18,14 @@
   "3": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "xray_crack, weld crack defect, radiographic image, high contrast, sharp edges",
+      "text": "xray_crack, weld crack defect, radiographic image, dark crack line, linear discontinuity",
       "clip": ["2", 1]
     }
   },
   "4": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "color, photograph, blurry, text, watermark, low quality, rgb",
+      "text": "color, photograph, blurry, text, watermark, low quality, rgb, bright defect, white line",
       "clip": ["2", 1]
     }
   },
@@ -42,32 +42,17 @@
     }
   },
   "7": {
-    "class_type": "ControlNetLoader",
+    "class_type": "VAEEncode",
     "inputs": {
-      "control_net_name": "control_v11p_sd15_inpaint.pth"
+      "pixels": ["5", 0],
+      "vae": ["1", 2]
     }
   },
   "8": {
-    "class_type": "InpaintModelConditioning",
+    "class_type": "SetLatentNoiseMask",
     "inputs": {
-      "positive": ["3", 0],
-      "negative": ["4", 0],
-      "vae": ["1", 2],
-      "pixels": ["5", 0],
-      "mask": ["6", 1],
-      "noise_mask": true
-    }
-  },
-  "9": {
-    "class_type": "ControlNetApplyAdvanced",
-    "inputs": {
-      "strength": 0.8,
-      "start_percent": 0.0,
-      "end_percent": 1.0,
-      "positive": ["8", 0],
-      "negative": ["8", 1],
-      "control_net": ["7", 0],
-      "image": ["6", 0]
+      "samples": ["7", 0],
+      "mask": ["6", 1]
     }
   },
   "10": {
@@ -75,14 +60,14 @@
     "inputs": {
       "seed": 42,
       "steps": 20,
-      "cfg": 7.0,
+      "cfg": 10.0,
       "sampler_name": "euler",
       "scheduler": "normal",
-      "denoise": 0.85,
+      "denoise": 0.7,
       "model": ["2", 0],
-      "positive": ["9", 0],
-      "negative": ["9", 1],
-      "latent_image": ["8", 2]
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "latent_image": ["8", 0]
     }
   },
   "11": {

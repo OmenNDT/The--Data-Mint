@@ -47,6 +47,13 @@
       "control_net_name": "control_v11p_sd15_inpaint.pth"
     }
   },
+  "13": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": ["6", 0],
+      "channel": "red"
+    }
+  },
   "8": {
     "class_type": "InpaintModelConditioning",
     "inputs": {
@@ -54,7 +61,8 @@
       "negative": ["4", 0],
       "vae": ["1", 2],
       "pixels": ["5", 0],
-      "mask": ["6", 1]
+      "mask": ["13", 0],
+      "noise_mask": true
     }
   },
   "9": {

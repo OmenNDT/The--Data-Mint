@@ -1,0 +1,56 @@
+defect_prompts:
+  crack:
+    lora_name: xray_crack_cyberreal_lora_r32.safetensors
+    positive: xray_crack, weld crack defect, radiographic image, dark crack line,
+      linear discontinuity, high contrast
+    negative: color, photograph, blurry, text, watermark, low quality, rgb, bright
+      defect, white line, clean weld, no defect
+    lora_strength: 0.9
+    controlnet_strength: 0.35
+    denoise: 1.0
+  porosity:
+    lora_name: xray_porosity_cyberreal_lora_r32.safetensors
+    positive: xray_porosity, weld porosity defect, radiographic image, scattered dark
+      spots, gas pockets, spherical voids
+    negative: color, photograph, blurry, text, watermark, low quality, rgb, linear
+      defects, cracks
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.8
+  inclusion:
+    lora_name: xray_inclusion_cyberreal_lora_r32.safetensors
+    positive: xray_inclusion, slag inclusion defect, radiographic image, irregular
+      dark region, non-metallic particles, trapped material
+    negative: color, photograph, blurry, text, watermark, low quality, rgb, regular
+      patterns, uniform shapes
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.82
+  lack_of_fusion:
+    lora_name: xray_lof_cyberreal_lora_r32.safetensors
+    positive: xray_lof, lack of fusion defect, radiographic image, linear indication,
+      unbonded region, weld interface separation
+    negative: color, photograph, blurry, text, watermark, low quality, rgb, scattered
+      defects, porosity
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.85
+  undercut:
+    lora_name: xray_undercut_cyberreal_lora_r32.safetensors
+    positive: xray_undercut, weld undercut defect, radiographic image, groove along
+      weld toe, material reduction, edge discontinuity
+    negative: color, photograph, blurry, text, watermark, low quality, rgb, internal
+      defects, porosity
+    lora_strength: 0.7
+    controlnet_strength: 0.8
+    denoise: 0.83
+sampler_config:
+  sampler_name: euler
+  scheduler: normal
+  steps: 20
+  cfg: 10.0
+model_paths:
+  checkpoint: benchmark/cyberrealistic-v42.safetensors
+  controlnet: controlnet/control_v11p_sd15_inpaint.pth
+  lora_dir: loras/
+  vae: sd-vae-ft-mse.safetensors

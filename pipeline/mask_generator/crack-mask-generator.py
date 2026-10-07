@@ -25,10 +25,10 @@ class CrackMaskGenerator(DefectMaskGenerator):
         height: int = 512,
         width: int = 512,
         seed: int = None,
-        width_range: Tuple[int, int] = (1, 4),
-        length_pct_range: Tuple[float, float] = (0.3, 0.8),
+        width_range: Tuple[int, int] = (2, 4),
+        length_pct_range: Tuple[float, float] = (0.10, 0.85),
         branch_probability: float = 0.2,
-        angle_variation: float = 15.0,
+        angle_variation: float = 20.0,
         **kwargs
     ):
         """
@@ -57,14 +57,14 @@ class CrackMaskGenerator(DefectMaskGenerator):
 
         # Starting position (center of image with variation)
         start_x = self.rng.integers(self.width // 4, 3 * self.width // 4)
-        start_y = self.height // 2 + self.rng.integers(-50, 50)
+        start_y = self.weld_center_y + self.rng.integers(-50, 50)
 
         # Base angle (mostly horizontal, slight variation)
         base_angle = self.rng.uniform(-self.angle_variation, self.angle_variation)
 
         # Generate main crack path
         points = self._random_walk_polyline(
-            start_x, start_y, crack_length, base_angle, num_segments=20
+            start_x, start_y, crack_length, base_angle, num_segments=60
         )
         cv2.polylines(mask, [points], isClosed=False, color=255, thickness=crack_width)
 
@@ -76,13 +76,11 @@ class CrackMaskGenerator(DefectMaskGenerator):
             branch_angle = base_angle + self.rng.uniform(-45, 45)
 
             branch_points = self._random_walk_polyline(
-                branch_start[0], branch_start[1], branch_length, branch_angle, num_segments=10
+                branch_start[0], branch_start[1], branch_length, branch_angle, num_segments=25
             )
             cv2.polylines(mask, [branch_points], isClosed=False, color=255, thickness=max(1, crack_width - 1))
 
-        # Create feathered version
-        feathered = feather_mask(mask, blur_radius=3)
-
+        feathered = feather_mask(mask, blur_radius=1)
         return mask, feathered
 
     def _random_walk_polyline(
@@ -106,10 +104,17 @@ class CrackMaskGenerator(DefectMaskGenerator):
         current_x, current_y = start_x, start_y
         current_angle = np.radians(base_angle)
 
+        base_angle_rad = np.radians(base_angle)
+        max_deviation = np.radians(35)  # Clamp total drift ≤35° — prevents "?" shape
+
         for _ in range(num_segments):
-            # Add random angle perturbation
-            angle_noise = self.rng.uniform(-20, 20)
-            current_angle += np.radians(angle_noise)
+            # Add random angle perturbation, but clamp total drift from base direction
+            angle_noise = self.rng.uniform(-45, 45)
+            new_angle = current_angle + np.radians(angle_noise)
+            # Clamp: total deviation from base direction cannot exceed ±60°
+            deviation = new_angle - base_angle_rad
+            deviation = np.clip(deviation, -max_deviation, max_deviation)
+            current_angle = base_angle_rad + deviation
 
             # Calculate next point
             dx = segment_length * np.cos(current_angle)

@@ -1,17 +1,46 @@
 """
 Porosity defect mask generator.
 
-Generates clustered gas pore patterns using Rayleigh-distributed circles.
-Morphology: multiple small circular voids scattered around cluster center.
+Generates isolated gas pores (1-4 pores, scattered independently).
+Morphology: individual small circular voids, NOT clustered (use clustered_porosity for that).
 """
 
 import numpy as np
 import cv2
+from scipy.ndimage import gaussian_filter
 from typing import Tuple
 from importlib import import_module
 
 base_module = import_module('.base-defect-mask-generator', package='mask_generator')
 feathering_module = import_module('.feathering-utility', package='mask_generator')
+
+
+def _organic_pore_blob(rng, diameter: int) -> np.ndarray:
+    """Create an organic (irregular, non-circular) pore blob using gaussian noise threshold."""
+    noise = rng.normal(0, 1, (diameter, diameter))
+    smoothed = gaussian_filter(noise, sigma=max(1.5, diameter * 0.25))
+    smoothed = (smoothed - smoothed.min()) / (smoothed.max() - smoothed.min() + 1e-8)
+    # Circular falloff so blob stays roughly within diameter
+    y, x = np.ogrid[:diameter, :diameter]
+    c = diameter / 2
+    falloff = np.clip(1 - np.sqrt((x - c) ** 2 + (y - c) ** 2) / c, 0, 1)
+    blob = np.where(smoothed * falloff > 0.38, 255, 0).astype(np.uint8)
+    return blob
+
+
+def _place_blob(mask, blob, cx, cy):
+    """Stamp a blob array onto mask centered at (cx, cy)."""
+    d = blob.shape[0]
+    h, w = mask.shape
+    half = d // 2
+    y0, y1 = max(0, cy - half), min(h, cy + half)
+    x0, x1 = max(0, cx - half), min(w, cx + half)
+    by0 = half - (cy - y0)
+    bx0 = half - (cx - x0)
+    mask[y0:y1, x0:x1] = np.maximum(
+        mask[y0:y1, x0:x1],
+        blob[by0: by0 + (y1 - y0), bx0: bx0 + (x1 - x0)]
+    )
 
 DefectMaskGenerator = base_module.DefectMaskGenerator
 feather_mask = feathering_module.feather_mask
@@ -25,56 +54,90 @@ class PorosityMaskGenerator(DefectMaskGenerator):
         height: int = 512,
         width: int = 512,
         seed: int = None,
-        count_range: Tuple[int, int] = (5, 30),
-        radius_range: Tuple[int, int] = (2, 8),
-        rayleigh_scale: float = 30.0,
+        count_range: Tuple[int, int] = (1, 1),
+        radius_range: Tuple[int, int] = (10, 50),
         **kwargs
     ):
         """
-        Initialize porosity mask generator.
+        Initialize isolated porosity mask generator.
 
         Args:
-            count_range: Number of gas pores to generate
-            radius_range: Pore radius range in pixels
-            rayleigh_scale: Rayleigh distribution scale for scatter distance
+            count_range: 1 isolated pore only (isolated porosity = single gas pocket)
+            radius_range: Pore radius in pixels (5-25px = 1-5mm at 10px/mm scale)
         """
+        super().__init__(height, width, seed, **kwargs)
+        self.count_range = count_range
+        self.radius_range = radius_range
+
+    def generate(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate isolated porosity mask: 1-4 pores placed independently."""
+        mask = self._create_blank_mask()
+
+        num_pores = self.rng.integers(self.count_range[0], self.count_range[1] + 1)
+
+        # Weld zone vertical extent
+        weld_half = int(self.height * 0.12)
+
+        for _ in range(num_pores):
+            pore_x = int(self.rng.integers(self.width // 8, 7 * self.width // 8))
+            pore_y = int(np.clip(
+                self.weld_center_y + self.rng.integers(-weld_half, weld_half),
+                weld_half, self.height - weld_half
+            ))
+            radius = int(self.rng.integers(self.radius_range[0], self.radius_range[1] + 1))
+            blob = _organic_pore_blob(self.rng, radius * 2)
+            _place_blob(mask, blob, pore_x, pore_y)
+
+        feathered = feather_mask(mask, blur_radius=2)
+        return mask, feathered
+
+
+class ClusteredPorosityMaskGenerator(DefectMaskGenerator):
+    """
+    Generator for clustered porosity defect masks.
+
+    Morphology: many small circular gas pores tightly grouped together.
+    Distinct from isolated porosity: higher pore count, Rayleigh-distributed scatter
+    creating a visible cluster pattern.
+    """
+
+    def __init__(
+        self,
+        height: int = 512,
+        width: int = 512,
+        seed: int = None,
+        count_range: Tuple[int, int] = (8, 25),
+        radius_range: Tuple[int, int] = (8, 28),
+        rayleigh_scale: float = 50.0,
+        **kwargs
+    ):
         super().__init__(height, width, seed, **kwargs)
         self.count_range = count_range
         self.radius_range = radius_range
         self.rayleigh_scale = rayleigh_scale
 
     def generate(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate porosity mask with clustered circles."""
+        """Generate clustered porosity: many pores around a common center."""
         mask = self._create_blank_mask()
 
-        # Random parameters
         num_pores = self.rng.integers(self.count_range[0], self.count_range[1] + 1)
 
-        # Cluster center (within central weld zone)
-        cluster_x = self.rng.integers(self.width // 4, 3 * self.width // 4)
-        cluster_y = self.height // 2 + self.rng.integers(-50, 50)
+        # Cluster center within weld zone
+        cluster_x = int(self.rng.integers(self.width // 5, 4 * self.width // 5))
+        weld_half = int(self.height * 0.12)
+        cluster_y = int(np.clip(
+            self.weld_center_y + self.rng.integers(-weld_half, weld_half),
+            weld_half, self.height - weld_half
+        ))
 
-        # Generate pores around cluster center
         for _ in range(num_pores):
-            # Rayleigh-distributed distance from cluster center
             distance = self.rng.rayleigh(self.rayleigh_scale)
             angle = self.rng.uniform(0, 2 * np.pi)
+            pore_x = int(np.clip(cluster_x + distance * np.cos(angle), 0, self.width - 1))
+            pore_y = int(np.clip(cluster_y + distance * np.sin(angle), 0, self.height - 1))
+            radius = int(self.rng.integers(self.radius_range[0], self.radius_range[1] + 1))
+            blob = _organic_pore_blob(self.rng, radius * 2)
+            _place_blob(mask, blob, pore_x, pore_y)
 
-            # Pore position
-            pore_x = int(cluster_x + distance * np.cos(angle))
-            pore_y = int(cluster_y + distance * np.sin(angle))
-
-            # Clamp to image bounds
-            pore_x = np.clip(pore_x, 0, self.width - 1)
-            pore_y = np.clip(pore_y, 0, self.height - 1)
-
-            # Random pore radius
-            radius = self.rng.integers(self.radius_range[0], self.radius_range[1] + 1)
-
-            # Draw circle
-            cv2.circle(mask, (pore_x, pore_y), radius, color=255, thickness=-1)
-
-        # Create feathered version
-        feathered = feather_mask(mask, blur_radius=4)
-
+        feathered = feather_mask(mask, blur_radius=2)
         return mask, feathered

@@ -1,0 +1,2 @@
+# Plant HMI phase 4: read-only ComfyUI progress observer (see plant_hmi/plant_comfyui_progress_observer.py)
+websocket-client>=1.9.2

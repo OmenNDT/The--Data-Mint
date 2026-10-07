@@ -1,22 +1,25 @@
 comfyui:
-  host: 10.86.201.250
+  host: 127.0.0.1
   port: 8188
   prompts_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/defect-type-prompt-templates.yaml
   workflow_path: /home/sontn/Projects/The Data Mint/pipeline/comfyui-workflows/sd15-lora-controlnet-inpaint-batch-api-workflow.json
 generation:
+  # Tong cac ty le phai bang 1,0. Bo lap lich tinh so anh moi lop bang
+  # int(total_images * ty_le) va khong chuan hoa lai, nen tong khac 1,0
+  # se lam lo sinh ra nhieu hoac it hon total_images.
   defect_distribution:
-    crack: 0.1
-    porosity: 0.1
-    lack_of_fusion: 0.1
-    lack_of_penetration: 0.1
-    lack_of_side_wall_fusion: 0.1  # LoRA + mask script ready
-    undercut: 0.1  # LoRA + mask script ready
-    clustered_porosity: 0.1
-    slag_inclusion: 0.1
-    linear_porosity: 0.1
-    elongated_cavity: 0.1
-    metallic_inclusion: 0.1
-    linear_slag_inclusion: 0.1
+    crack: 0.0833
+    porosity: 0.0833
+    lack_of_fusion: 0.0833
+    lack_of_penetration: 0.0833
+    lack_of_side_wall_fusion: 0.0833  # LoRA + mask script ready
+    undercut: 0.0833  # LoRA + mask script ready
+    clustered_porosity: 0.0833
+    slag_inclusion: 0.0833
+    linear_porosity: 0.0833
+    elongated_cavity: 0.0833
+    metallic_inclusion: 0.0833
+    linear_slag_inclusion: 0.0837
   resolution: 512
   total_images: 1000
 lora_models:

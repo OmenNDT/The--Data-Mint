@@ -44,3 +44,12 @@ undercut:
 # Feathering parameters
 feathering:
   blur_radius: 5                      # Gaussian blur radius for mask edges
+
+# Inpainting mask dilation
+# Dilates the binary mask before feathering for inpainting use.
+# Original thin mask is preserved as ground truth annotation.
+inpaint_dilation:
+  enabled: true
+  kernel_size: 21                     # Dilation kernel diameter in pixels (odd number)
+  kernel_shape: "ellipse"             # "ellipse", "rect", or "cross"
+  feather_blur_radius: 7             # Blur radius applied after dilation

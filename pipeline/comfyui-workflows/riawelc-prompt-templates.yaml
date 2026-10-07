@@ -1,0 +1,27 @@
+# RIAWELC-specific prompt templates for ComfyUI inpainting
+# Uses RIAWELC-trained LoRAs for better quality matching real X-ray data
+
+defect_prompts:
+  crack:
+    lora_name: "xray_crack_riawelc_lora_r32.safetensors"
+    positive: "xray_crack, weld crack defect, radiographic image, high contrast, sharp edges, linear discontinuity, prominent dark line, visible crack pattern"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, round shapes, clean weld, no defect"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  porosity:
+    lora_name: "xray_porosity_riawelc_lora_r32.safetensors"
+    positive: "xray_porosity, weld porosity defect, radiographic image, scattered dark spots, gas pockets, spherical voids"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, linear defects, cracks"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90
+
+  lack_of_penetration:
+    lora_name: "xray_lop_riawelc_lora_r32.safetensors"
+    positive: "xray_lack_of_penetration, incomplete penetration defect, radiographic image, narrow dark linear band along weld centerline, incomplete root fusion, weld root gap"
+    negative: "color, photograph, blurry, text, watermark, low quality, rgb, scattered defects, porosity, surface defects"
+    lora_strength: 1.0
+    controlnet_strength: 0.85
+    denoise: 0.90

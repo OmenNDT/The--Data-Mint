@@ -13,7 +13,7 @@ from typing import Tuple
 class DefectMaskGenerator(ABC):
     """Abstract base class for defect-specific mask generators."""
 
-    def __init__(self, height: int = 512, width: int = 512, seed: int = None, **kwargs):
+    def __init__(self, height: int = 512, width: int = 512, seed: int = None, weld_center_y: int = None, **kwargs):
         """
         Initialize mask generator.
 
@@ -21,11 +21,17 @@ class DefectMaskGenerator(ABC):
             height: Output mask height in pixels
             width: Output mask width in pixels
             seed: Random seed for reproducibility
+            weld_center_y: Y-coordinate of weld bead center (auto-detected from background).
+                           Falls back to height//2 if not provided.
             **kwargs: Additional defect-specific parameters
         """
         self.height = height
         self.width = width
         self.rng = np.random.default_rng(seed)
+        # Clamp weld_center_y to safe margin so mask generators never create zero-row slices
+        margin = max(10, height // 8)
+        raw_y = weld_center_y if weld_center_y is not None else height // 2
+        self.weld_center_y = int(np.clip(raw_y, margin, height - margin))
         self.params = kwargs
 
     @abstractmethod

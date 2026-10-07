@@ -4,12 +4,20 @@ Procedural binary mask generators for weld defect synthesis.
 
 ## Overview
 
-Generates binary masks for 5 weld defect types with realistic morphologies:
-- **Crack**: Jagged linear patterns (random walk polylines)
-- **Porosity**: Clustered gas pores (Rayleigh-distributed circles)
-- **Lack of Fusion**: Linear indications along fusion boundaries
-- **Slag Inclusion**: Irregular organic blobs
-- **Undercut**: Edge-aligned linear grooves
+Generates binary masks for 10 weld defect types with realistic morphologies:
+
+| # | Defect Class | Morphology | Generator |
+|---|---|---|---|
+| 1 | **Crack** | Jagged random-walk polylines (1-4px, branching) | `CrackMaskGenerator` |
+| 2 | **Porosity** | 1-4 organic gaussian-noise blobs | `PorosityMaskGenerator` |
+| 3 | **Clustered Porosity** | 8-25 pores in Rayleigh-scattered cluster | `ClusteredPorosityMaskGenerator` |
+| 4 | **Linear Porosity** | 5-15 pores in horizontal chain with jitter | `LinearPorosityMaskGenerator` |
+| 5 | **Lack of Fusion** | Flat band OFF-CENTER (5-12px, parallel edges) | `LackOfFusionMaskGenerator` |
+| 6 | **Lack of Penetration** | Thin near-continuous line AT CENTERLINE (2-4px) | `LackOfPenetrationMaskGenerator` |
+| 7 | **Slag Inclusion** | Single irregular blob (Gaussian noise threshold) | `SlagInclusionMaskGenerator` |
+| 8 | **Linear Slag Inclusion** | 3-6 slag blobs in horizontal row | `LinearSlagInclusionMaskGenerator` |
+| 9 | **Metallic Inclusion** | Single compact dense blob (sharper edges) | `MetallicInclusionMaskGenerator` |
+| 10 | **Elongated Cavity** | Irregular wormhole (quadratic bezier + asymmetric width) | `ElongatedCavityMaskGenerator` |
 
 Each generator produces:
 1. **Binary mask** (0 or 255): Sharp edges for ground truth annotation
@@ -20,6 +28,7 @@ Each generator produces:
 ```python
 from mask_generator import (
     CrackMaskGenerator,
+    ClusteredPorosityMaskGenerator,
     create_weld_roi_mask,
     apply_weld_roi
 )
@@ -52,7 +61,7 @@ See `../config/mask-config.yaml` for all parameters:
 ## Testing
 
 ```bash
-# Unit tests (34 tests)
+# Unit tests
 python3 tests/test-mask-generator-unit-tests.py
 
 # Visual validation + benchmark
@@ -63,14 +72,19 @@ python3 test-mask-generators-visual.py
 
 ```
 mask_generator/
-├── base-defect-mask-generator.py    # Abstract base class
-├── crack-mask-generator.py          # Crack morphology
-├── porosity-mask-generator.py       # Porosity morphology
-├── lack-of-fusion-mask-generator.py # LoF morphology
-├── slag-inclusion-mask-generator.py # Slag/inclusion morphology
-├── undercut-mask-generator.py       # Undercut morphology
-├── weld-roi-constraint.py           # ROI utilities
-└── feathering-utility.py            # Edge smoothing
+├── base-defect-mask-generator.py           # Abstract base class
+├── crack-mask-generator.py                 # Crack morphology
+├── porosity-mask-generator.py              # Porosity (isolated)
+├── clustered-porosity-mask-generator.py    # Clustered porosity
+├── linear-porosity-mask-generator.py       # Linear porosity
+├── lack-of-fusion-mask-generator.py        # Lack of fusion
+├── lack-of-penetration-mask-generator.py   # Lack of penetration
+├── slag-inclusion-mask-generator.py        # Slag inclusion
+├── linear-slag-inclusion-mask-generator.py # Linear slag inclusion
+├── metallic-inclusion-mask-generator.py    # Metallic inclusion
+├── elongated-cavity-mask-generator.py      # Elongated cavity
+├── weld-roi-constraint.py                  # ROI utilities
+└── feathering-utility.py                   # Edge smoothing
 ```
 
 ## Usage in Pipeline
