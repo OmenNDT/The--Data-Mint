@@ -53,6 +53,12 @@ REGISTRY = {
     "clustered_post_depth_max": (3, "Rỗ khí cụm: độ sâu làm tối, cận trên (0 là dùng độ sâu rỗ khí)", 0.0, 1.0, 0.0, 0.0),
     "linear_post_depth_min": (3, "Rỗ khí chuỗi: độ sâu làm tối, cận dưới (0 là dùng độ sâu rỗ khí)", 0.0, 1.0, 0.0, 0.0),
     "linear_post_depth_max": (3, "Rỗ khí chuỗi: độ sâu làm tối, cận trên (0 là dùng độ sâu rỗ khí)", 0.0, 1.0, 0.0, 0.0),
+    "linear_post_modulation": (3, "Rỗ khí chuỗi: độ thay đổi độ sâu dọc lỗi (-1 là dùng chung)", -1.0, 0.9, -1.0, -1.0),
+    # Độ sâu riêng xỉ / rỗ khí kéo dài (0 là dùng độ sâu chung): hình dạng đã sửa nhưng còn quá nhạt (7/10).
+    "slag_post_depth_min": (6, "Xỉ: độ sâu làm tối, cận dưới (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
+    "slag_post_depth_max": (6, "Xỉ: độ sâu làm tối, cận trên (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
+    "ecav_post_depth_min": (6, "Rỗ khí kéo dài: độ sâu làm tối, cận dưới (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
+    "ecav_post_depth_max": (6, "Rỗ khí kéo dài: độ sâu làm tối, cận trên (0 là dùng chung)", 0.0, 1.0, 0.0, 0.0),
     # Xỉ: thật to gấp ~8 lần, dài, méo (realism/mask_shaping_slag.py).
     "slag_scale": (6, "Xỉ: phóng diện tích vùng (lần)", 1.0, 12.0, 1.0, 1.0),
     "slag_elongation": (6, "Xỉ: kéo dài theo trục (tỉ lệ trục)", 1.0, 6.0, 1.0, 1.0),
@@ -129,7 +135,8 @@ def resolve(store="production", use_env=True):
         out[name] = {"value": val, "source": src}
     for a, b in (("post_depth_min", "post_depth_max"), ("pore_aspect_min", "pore_aspect_max"),
                  ("linear_pore_aspect_min", "linear_pore_aspect_max"), ("pore_post_depth_min", "pore_post_depth_max"),
-                 ("clustered_post_depth_min", "clustered_post_depth_max"), ("linear_post_depth_min", "linear_post_depth_max")):
+                 ("clustered_post_depth_min", "clustered_post_depth_max"), ("linear_post_depth_min", "linear_post_depth_max"),
+                 ("slag_post_depth_min", "slag_post_depth_max"), ("ecav_post_depth_min", "ecav_post_depth_max")):
         if out[a]["value"] > out[b]["value"]:                  # cận dưới vượt cận trên: đổi chỗ, không ném lỗi
             out[a], out[b] = out[b], out[a]
     return out

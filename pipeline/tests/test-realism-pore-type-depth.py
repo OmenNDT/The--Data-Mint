@@ -86,5 +86,23 @@ class EffectiveKnobsPrecedence(unittest.TestCase):
         self.assertEqual((eff["post_depth_min"], eff["post_depth_max"]), (0.8, 1.0))
 
 
+class NextRoundKnobsDefaults(unittest.TestCase):
+    """Núm vòng sau (7/10) mặc định giữ hành vi cũ; chỉ chạm đúng loại của nó."""
+    def test_defaults_and_scoping(self):
+        from realism import knobs as K
+        from realism.post_darkening import effective_knobs
+        base = dict(K.DEFAULTS); base.update(post_depth_min=0.4, post_depth_max=0.6, post_modulation=0.65)
+        for t in ("slag_inclusion", "elongated_cavity", "linear_porosity", "crack"):
+            self.assertEqual(effective_knobs(base, t)["post_depth_min"], 0.4)
+            self.assertEqual(effective_knobs(base, t)["post_modulation"], 0.65)
+        k = {**base, "slag_post_depth_min": 0.8, "slag_post_depth_max": 1.0, "ecav_post_depth_min": 0.7,
+             "ecav_post_depth_max": 0.9, "linear_post_modulation": 0.0}
+        self.assertEqual(effective_knobs(k, "slag_inclusion")["post_depth_min"], 0.8)
+        self.assertEqual(effective_knobs(k, "elongated_cavity")["post_depth_max"], 0.9)
+        self.assertEqual(effective_knobs(k, "linear_porosity")["post_modulation"], 0.0)
+        self.assertEqual(effective_knobs(k, "crack")["post_depth_min"], 0.4)
+        self.assertEqual(effective_knobs(k, "porosity")["post_modulation"], 0.65)
+
+
 if __name__ == "__main__":
     unittest.main()

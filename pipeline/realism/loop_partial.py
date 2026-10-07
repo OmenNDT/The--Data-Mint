@@ -23,7 +23,10 @@ def changed_knobs(cand, best):
 DARKEN_TYPE_KNOBS = {"pore_post_depth_min": {"porosity", "clustered_porosity", "linear_porosity"},
                      "pore_post_depth_max": {"porosity", "clustered_porosity", "linear_porosity"},
                      "clustered_post_depth_min": {"clustered_porosity"}, "clustered_post_depth_max": {"clustered_porosity"},
-                     "linear_post_depth_min": {"linear_porosity"}, "linear_post_depth_max": {"linear_porosity"}}
+                     "linear_post_depth_min": {"linear_porosity"}, "linear_post_depth_max": {"linear_porosity"},
+                     "linear_post_modulation": {"linear_porosity"},
+                     "slag_post_depth_min": {"slag_inclusion"}, "slag_post_depth_max": {"slag_inclusion"},
+                     "ecav_post_depth_min": {"elongated_cavity"}, "ecav_post_depth_max": {"elongated_cavity"}}
 
 
 def affected_types(cand, best, selected):

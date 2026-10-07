@@ -49,7 +49,13 @@ def effective_knobs(knobs, defect_type):
     per_type = {
         "clustered_porosity": ("clustered_post_depth_min", "clustered_post_depth_max"),
         "linear_porosity": ("linear_post_depth_min", "linear_post_depth_max"),
+        # Vòng sau (7/10): xỉ và rỗ khí kéo dài hình dạng đã tốt lên nhưng còn quá nhạt.
+        "slag_inclusion": ("slag_post_depth_min", "slag_post_depth_max"),
+        "elongated_cavity": ("ecav_post_depth_min", "ecav_post_depth_max"),
     }
+    if defect_type == "linear_porosity" and knobs.get("linear_post_modulation", -1.0) >= 0:
+        # Độ thay đổi độ sâu riêng cho rỗ khí chuỗi (-1 là dùng chung): tắt nó giúp chuỗi rõ (nhánh A, 6/10).
+        knobs = {**knobs, "post_modulation": knobs["linear_post_modulation"]}
     if defect_type in per_type:
         k_lo, k_hi = per_type[defect_type]
         lo, hi = knobs.get(k_lo, 0.0), knobs.get(k_hi, 0.0)
