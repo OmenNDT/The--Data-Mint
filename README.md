@@ -340,4 +340,4 @@ All phases enforce quality checkpoints:
 **Status**: Production Ready
 **Last Updated**: 2026-02-14
 **Version**: 1.1
-**Maintainer**: [Project Team]
+**Maintainer**: Truong Ngoc Son
